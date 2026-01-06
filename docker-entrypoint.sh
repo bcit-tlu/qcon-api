@@ -16,14 +16,14 @@ else
   echo "/etc/secrets directory does not exist"
 fi
 
-echo "-------------------------------------------------------------------------------------------"
-echo "Container is now PAUSED for troubleshooting."
-echo "You can exec into this pod and run migrations manually, e.g.:"
-echo "  python manage.py makemigrations api"
-echo "  python manage.py migrate"
-echo "Sleeping for 600 seconds (10 minutes)..."
-sleep 600
-echo "Resuming normal startup sequence..."
+# echo "-------------------------------------------------------------------------------------------"
+# echo "Container is now PAUSED for troubleshooting."
+# echo "You can exec into this pod and run migrations manually, e.g.:"
+# echo "  python manage.py makemigrations api"
+# echo "  python manage.py migrate"
+# echo "Sleeping for 600 seconds (10 minutes)..."
+# sleep 600
+# echo "Resuming normal startup sequence..."
 
 
 # Collect static files
