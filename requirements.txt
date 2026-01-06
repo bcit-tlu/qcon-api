@@ -1,4 +1,4 @@
-Django==3.2.16
+Django==5.2
 djangorestframework==3.14.0
 django-extensions==3.2.1
 Pygments==2.13.0
