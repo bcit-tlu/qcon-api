@@ -9,4 +9,6 @@ from django.conf import settings
 urlpatterns = [
     path('convert', views.WordToJson.as_view(), name='WordToJson'),
     path('package', views.JsonToScorm.as_view(), name='JsonToScorm'),
+    path('scorm-to-json', views.ScormToJson.as_view(), name='ScormToJson'),
+    path('json-to-docx', views.JsonToDocx.as_view(), name='JsonToDocx'),
 ]

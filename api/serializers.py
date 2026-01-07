@@ -12,18 +12,43 @@ def validate_docx_file(value):
         raise serializers.ValidationError("not a valid word file")
 
 
+def validate_zip_file(value):
+    """Validate that uploaded file is a ZIP file."""
+    if not value.name.endswith('.zip'):
+        raise serializers.ValidationError("not a valid zip file")
+    return value
+
+
 def count_errors(questionlibrary):
+    """
+    Count document and question errors.
+    For reverse conversion (SCORM to JSON), errors are typically 0 since
+    we're not parsing with ANTLR which would generate errors.
+    """
     # COUNT NUMBER OF DOCUMENT ERRORS
-    doc_errorlist = DocumentError.objects.filter(document=questionlibrary)
-    questionlibrary.total_document_errors = doc_errorlist.count()
+    # Check if DocumentError model exists (it may not be defined)
+    try:
+        from .models import DocumentError
+        doc_errorlist = DocumentError.objects.filter(document=questionlibrary)
+        questionlibrary.total_document_errors = doc_errorlist.count()
+    except (ImportError, AttributeError, NameError):
+        # DocumentError model doesn't exist, set to 0
+        questionlibrary.total_document_errors = 0
 
     # COUNT NUMBER OF QUESTION ERRORS
-    question_list = Question.objects.filter(question_library=questionlibrary)
-    num_question_errors = 0
-    for q in question_list:
-        q_errorlist = QuestionError.objects.filter(question=q)
-        num_question_errors += q_errorlist.count()
-    questionlibrary.total_question_errors = num_question_errors
+    # Check if QuestionError model exists (it may not be defined)
+    try:
+        from .models import QuestionError
+        question_list = Question.objects.filter(section__question_library=questionlibrary)
+        num_question_errors = 0
+        for q in question_list:
+            q_errorlist = QuestionError.objects.filter(question=q)
+            num_question_errors += q_errorlist.count()
+        questionlibrary.total_question_errors = num_question_errors
+    except (ImportError, AttributeError, NameError):
+        # QuestionError model doesn't exist, set to 0
+        questionlibrary.total_question_errors = 0
+    
     questionlibrary.save()
 
 
@@ -54,6 +79,25 @@ class WordToJsonSerializer(serializers.Serializer):
         instance.temp_file = validated_data.get('temp_file', instance.temp_file)
         instance.save()
         return instance
+
+
+class ScormToJsonSerializer(serializers.Serializer):
+    """Serializer for SCORM ZIP file upload to convert to JSON (mirrors WordToJsonSerializer)."""
+    scorm_file = serializers.FileField(validators=[validate_zip_file], max_length=100, allow_empty_file=False, use_url=True)
+
+    def create(self, validated_data):
+        newconversion = QuestionLibrary.objects.create()
+        newconversion.temp_file = validated_data.get('scorm_file', validated_data)
+        
+        # Set main title from filename
+        newconversion.main_title = newconversion.temp_file.name.split(".")[0]
+        newconversion.filter_main_title()
+        newconversion.folder_path = settings.MEDIA_ROOT + str(newconversion.id)
+        newconversion.image_path = newconversion.folder_path + settings.MEDIA_URL
+        newconversion.create_directory()
+        newconversion.save()
+        
+        return newconversion
 
 
 class JsonToScormSerializer(serializers.Serializer):
