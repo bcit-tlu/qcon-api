@@ -38,6 +38,34 @@ def _get_credential_dir() -> Path:
     return Path(base_dir)
 
 
+def _dynamic_credentials_required() -> bool:
+    """Return whether missing dynamic credentials should be treated as fatal.
+
+    Defaults to True in non-debug (production) environments and False when
+    DEBUG is True, but can be overridden via the DYNAMIC_DB_CREDENTIALS_REQUIRED
+    setting.
+    """
+
+    debug = getattr(settings, "DEBUG", False)
+    return getattr(settings, "DYNAMIC_DB_CREDENTIALS_REQUIRED", not debug)
+
+
+def _build_creds_from_settings() -> dict:
+    """Build credentials from the static DATABASES['default'] settings.
+
+    Used as a development fallback when dynamic credential files are not
+    available and dynamic credentials are not required.
+    """
+
+    db_settings = settings.DATABASES.get("default", {})
+    return {
+        "NAME": db_settings.get("NAME"),
+        "USER": db_settings.get("USER"),
+        "PASSWORD": db_settings.get("PASSWORD"),
+        "HOST": db_settings.get("HOST"),
+    }
+
+
 def _stat_file(path: Path):
     stat = path.stat()
     return stat.st_ino, stat.st_mtime, stat.st_size
@@ -90,8 +118,23 @@ def get_current_credentials() -> dict:
 
     with _state_lock:
         if _cached_state is None:
-            # First-time load: any error should be fatal so the app fails fast
-            state = _read_credentials_from_disk(cred_dir)
+            # First-time load: try dynamic files, optionally falling back to
+            # static DATABASES settings in development.
+            try:
+                state = _read_credentials_from_disk(cred_dir)
+            except Exception:
+                if _dynamic_credentials_required():
+                    # In production and similar environments, fail fast.
+                    raise
+
+                logger.info(
+                    "Dynamic database credentials unavailable from %s; "
+                    "falling back to static DATABASES settings",
+                    cred_dir,
+                    exc_info=True,
+                )
+                return _build_creds_from_settings()
+
             _cached_state = state
             logger.info("Loaded initial database credentials from %s", cred_dir)
             return dict(state.creds)

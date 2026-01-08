@@ -48,6 +48,12 @@ ADMIN_PASSWORD = get_secret('ADMIN_PASSWORD', subdirectory='app-internal-credent
 POSTGRES_HOST = get_secret('POSTGRES_HOST', subdirectory='db-credentials', required=True)
 API_KEY = get_secret('API_KEY', subdirectory='api-key', required=True)
 
+DYNAMIC_DB_CREDENTIAL_DIR = os.getenv('DYNAMIC_DB_CREDENTIAL_DIR', '/etc/secrets/db-credentials')
+DYNAMIC_DB_CREDENTIALS_REQUIRED = os.getenv(
+    'DYNAMIC_DB_CREDENTIALS_REQUIRED',
+    'false' if os.getenv('DEBUG', False) == 'true' else 'true',
+) == 'true'
+
 # optional vars
 APP_VERSION = os.getenv('APP_VERSION', default='')
 IMAGE_TAG = os.getenv('IMAGE_TAG', default='')
@@ -136,7 +142,7 @@ ASGI_APPLICATION = 'qcon.asgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'qcon.db_backends.postgresql_dynamic',
         'NAME': get_secret("POSTGRES_DB", subdirectory='db-credentials', required=True),
         'USER': get_secret("POSTGRES_USER", subdirectory='db-credentials', required=True),
         'PASSWORD': get_secret("POSTGRES_PASSWORD", subdirectory='db-credentials', required=True),

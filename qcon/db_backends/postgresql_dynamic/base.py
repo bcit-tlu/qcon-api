@@ -27,7 +27,7 @@ class DatabaseWrapper(PostgresDatabaseWrapper):
 
         name = creds.get("NAME")
         if name is not None:
-            params["database"] = name
+            params["dbname"] = name
 
         user = creds.get("USER")
         if user is not None:
