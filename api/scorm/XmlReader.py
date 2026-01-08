@@ -289,7 +289,10 @@ class XmlReader:
         return question_data
     
     def _extract_text_from_material(self, material_el):
-        """Extract text content from material element, handling CDATA."""
+        """
+        Extract text content from material element, handling CDATA.
+        Automatically cleans CDATA whitespace and HTML tags.
+        """
         text_parts = []
         
         # Navigate through flow_mat -> material -> mattext
@@ -300,16 +303,21 @@ class XmlReader:
                 mattext = material.find('mattext')
                 if mattext is not None:
                     # Get text content (handles CDATA)
-                    text = mattext.text if mattext.text else ''
+                    raw_text = mattext.text if mattext.text else ''
                     # Also check for CDATA in tail
                     if mattext.tail:
-                        text += mattext.tail
-                    text_parts.append(text)
+                        raw_text += mattext.tail
+                    # Clean CDATA whitespace while preserving HTML tags
+                    cleaned_text = self._clean_cdata_text(raw_text)
+                    text_parts.append(cleaned_text)
         
-        return ''.join(text_parts).strip()
+        return ''.join(text_parts)
     
     def _extract_question_text(self, presentation_el):
-        """Extract question text from presentation element."""
+        """
+        Extract question text from presentation element.
+        Automatically cleans CDATA whitespace and HTML tags.
+        """
         text_parts = []
         
         flow = presentation_el.find('flow')
@@ -319,12 +327,14 @@ class XmlReader:
             if material is not None:
                 mattext = material.find('mattext')
                 if mattext is not None:
-                    text = mattext.text if mattext.text else ''
+                    raw_text = mattext.text if mattext.text else ''
                     if mattext.tail:
-                        text += mattext.tail
-                    text_parts.append(text)
+                        raw_text += mattext.tail
+                    # Clean CDATA whitespace while preserving HTML tags
+                    cleaned_text = self._clean_cdata_text(raw_text)
+                    text_parts.append(cleaned_text)
         
-        return ''.join(text_parts).strip()
+        return ''.join(text_parts)
     
     def _extract_text_from_hint(self, hint_el):
         """Extract text from hint element."""
@@ -334,13 +344,54 @@ class XmlReader:
         return None
     
     def _extract_text_from_feedback(self, feedback_el):
-        """Extract text from feedback element."""
+        """
+        Extract text from feedback element.
+        Automatically cleans CDATA whitespace while preserving HTML tags.
+        """
         material = feedback_el.find('material')
         if material is not None:
             mattext = material.find('mattext')
             if mattext is not None:
-                return mattext.text if mattext.text else ''
+                raw_text = mattext.text if mattext.text else ''
+                # Clean CDATA whitespace while preserving HTML tags
+                return self._clean_cdata_text(raw_text)
         return None
+    
+    def _clean_cdata_text(self, text):
+        """
+        Clean text extracted from CDATA sections in SCORM XML.
+        
+        SCORM XML often contains CDATA with excessive whitespace, newlines, and tabs
+        that are formatting artifacts rather than meaningful content. This method:
+        1. Preserves HTML tags (e.g., <p>, <strong>, etc.)
+        2. Normalizes whitespace between HTML tags (multiple spaces/newlines/tabs -> single space)
+        3. Trims leading/trailing whitespace
+        
+        This ensures clean JSON output while preserving HTML structure for proper rendering.
+        
+        Args:
+            text: Raw text string from XML CDATA
+            
+        Returns:
+            str: Cleaned text with normalized whitespace but HTML tags preserved
+        """
+        if not text:
+            return ''
+        
+        try:
+            # Normalize whitespace while preserving HTML tags
+            # Replace sequences of whitespace (spaces, tabs, newlines) with a single space
+            # But be careful not to break HTML tag structure
+            cleaned = re.sub(r'[ \t\n\r]+', ' ', text)
+            # Remove whitespace between HTML tags (e.g., "> <" -> "><")
+            cleaned = re.sub(r'>\s+<', '><', cleaned)
+            # Trim leading/trailing whitespace
+            cleaned = cleaned.strip()
+            return cleaned
+        except Exception:
+            # Fallback: if regex fails, just normalize whitespace
+            cleaned = re.sub(r'\s+', ' ', text).strip()
+            return cleaned
     
     def _parse_multiple_choice(self, item_el, question_ident):
         """
@@ -390,7 +441,9 @@ class XmlReader:
                     mattext = response_label.find('.//mattext')
                     answer_text = ''
                     if mattext is not None:
-                        answer_text = mattext.text if mattext.text else ''
+                        raw_text = mattext.text if mattext.text else ''
+                        # Clean CDATA whitespace while preserving HTML tags
+                        answer_text = self._clean_cdata_text(raw_text)
                     
                     # Find weight from resprocessing
                     weight = 0.0
@@ -546,6 +599,7 @@ class XmlReader:
                 mattext = child.find('mattext')
                 text = ''
                 if mattext is not None:
+                    # Don't clean CDATA for FIB - preserve original spacing
                     text = mattext.text if mattext.text else ''
                 
                 fib_data['fibs'].append({
@@ -640,7 +694,9 @@ class XmlReader:
                     mattext = response_label.find('.//mattext')
                     answer_text = ''
                     if mattext is not None:
-                        answer_text = mattext.text if mattext.text else ''
+                        raw_text = mattext.text if mattext.text else ''
+                        # Clean CDATA whitespace while preserving HTML tags
+                        answer_text = self._clean_cdata_text(raw_text)
                     
                     # Determine if correct from resprocessing
                     is_correct = False
@@ -705,14 +761,28 @@ class XmlReader:
                 except (ValueError, TypeError):
                     pass
         
-        # Collect all unique matching answers first (from render_choice)
+        # Collect all unique matching answers first (from all render_choices)
         matching_answers = {}
-        answer_index = 1
-        question_ident_answer = question_ident + "_A"
         
         # Find all response_grp elements (one per choice)
         response_grps = flow.findall('response_grp')
         
+        # First pass: collect all possible answers from all choices
+        for response_grp in response_grps:
+            render_choice = response_grp.find('render_choice')
+            if render_choice is not None:
+                # Find all response_label elements directly (they may all be in one flow_label)
+                for response_label in render_choice.findall('.//response_label'):
+                    answer_ident = response_label.get('ident', '')
+                    mattext = response_label.find('.//mattext')
+                    if mattext is not None:
+                        raw_text = mattext.text if mattext.text else ''
+                        # Clean CDATA whitespace while preserving HTML tags
+                        answer_text = self._clean_cdata_text(raw_text)
+                        if answer_text and answer_ident not in matching_answers:
+                            matching_answers[answer_ident] = answer_text
+        
+        # Second pass: process each choice and find its correct answer
         for response_grp in response_grps:
             choice_ident = response_grp.get('respident', '')
             
@@ -722,22 +792,9 @@ class XmlReader:
             if material is not None:
                 mattext = material.find('mattext')
                 if mattext is not None:
-                    choice_text = mattext.text if mattext.text else ''
-            
-            # Get the render_choice to find available answers
-            render_choice = response_grp.find('render_choice')
-            matching_answer_texts = []
-            
-            if render_choice is not None:
-                for flow_label in render_choice.findall('.//flow_label'):
-                    response_label = flow_label.find('response_label')
-                    if response_label is not None:
-                        answer_ident = response_label.get('ident', '')
-                        mattext = response_label.find('.//mattext')
-                        if mattext is not None:
-                            answer_text = mattext.text if mattext.text else ''
-                            if answer_text and answer_ident not in matching_answers:
-                                matching_answers[answer_ident] = answer_text
+                    raw_text = mattext.text if mattext.text else ''
+                    # Clean CDATA whitespace while preserving HTML tags
+                    choice_text = self._clean_cdata_text(raw_text)
             
             # Find correct answer from resprocessing
             correct_answer_ident = None
@@ -751,6 +808,7 @@ class XmlReader:
                             setvar = respcondition.find('setvar')
                             if setvar is not None and setvar.get('varname') == 'D2L_Correct':
                                 correct_answer_ident = varequal.text
+                                break  # Found the correct answer for this choice
             
             # Build matching answers list for this choice
             matching_answers_list = []
@@ -793,32 +851,33 @@ class XmlReader:
             return ord_data
         
         # Parse ordering items
+        # Find all response_label elements directly (they may all be in one flow_label)
         order_index = 1
-        for flow_label in render_choice.findall('.//flow_label'):
-            response_label = flow_label.find('response_label')
-            if response_label is not None:
-                ident_num = response_label.get('ident', '')
-                
-                # Extract text
-                mattext = response_label.find('.//mattext')
-                text = ''
-                if mattext is not None:
-                    text = mattext.text if mattext.text else ''
-                
-                # Find feedback
-                ord_feedback = None
-                question_ident_feedback = question_ident + "_IF"
-                feedback_ident = question_ident_feedback + str(order_index)
-                feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
-                if feedback_el is not None:
-                    ord_feedback = self._extract_text_from_feedback(feedback_el)
-                
-                ord_data['items'].append({
-                    'text': text,
-                    'order': order_index,
-                    'ord_feedback': ord_feedback
-                })
-                order_index += 1
+        for response_label in render_choice.findall('.//response_label'):
+            ident_num = response_label.get('ident', '')
+            
+            # Extract text
+            mattext = response_label.find('.//mattext')
+            text = ''
+            if mattext is not None:
+                raw_text = mattext.text if mattext.text else ''
+                # Clean CDATA whitespace while preserving HTML tags
+                text = self._clean_cdata_text(raw_text)
+            
+            # Find feedback
+            ord_feedback = None
+            question_ident_feedback = question_ident + "_IF"
+            feedback_ident = question_ident_feedback + str(order_index)
+            feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
+            if feedback_el is not None:
+                ord_feedback = self._extract_text_from_feedback(feedback_el)
+            
+            ord_data['items'].append({
+                'text': text,
+                'order': order_index,
+                'ord_feedback': ord_feedback
+            })
+            order_index += 1
         
         return ord_data
     
@@ -853,7 +912,9 @@ class XmlReader:
             if answer_key_mat is not None:
                 mattext = answer_key_mat.find('.//mattext')
                 if mattext is not None:
-                    wr_data['answer_key'] = mattext.text if mattext.text else ''
+                    raw_text = mattext.text if mattext.text else ''
+                    # Clean CDATA whitespace while preserving HTML tags
+                    wr_data['answer_key'] = self._clean_cdata_text(raw_text)
         
         # Parse initial_text (if present)
         initial_text_el = item_el.find('initial_text')
@@ -862,7 +923,10 @@ class XmlReader:
             if initial_text_mat is not None:
                 mattext = initial_text_mat.find('.//mattext')
                 if mattext is not None:
-                    wr_data['initial_text'] = mattext.text if mattext.text else None
+                    raw_text = mattext.text if mattext.text else ''
+                    # Clean CDATA whitespace while preserving HTML tags
+                    cleaned_text = self._clean_cdata_text(raw_text)
+                    wr_data['initial_text'] = cleaned_text if cleaned_text else None
         
         return wr_data
     
@@ -1184,11 +1248,14 @@ class XmlReader:
         if question.title:
             lines.append(f"Title: {question.title}")
         if question.points:
-            lines.append(f"Points: {question.points}")
+            # Normalize points: remove trailing zeros and decimal if not needed (e.g., 1.0000 -> 1, 1.5 -> 1.5)
+            normalized_points = str(float(question.points)).rstrip('0').rstrip('.')
+            lines.append(f"Points: {normalized_points}")
         
         # Add question text (HTML format from SCORM, convert to plain text)
         # Prefix with question number if available (e.g., "1. Question text")
-        if question.text:
+        # Note: For FIB questions, skip displaying question.text here since FIB formatting includes all text parts
+        if question.text and question.questiontype != 'FIB':
             # Convert HTML to plain text if needed
             question_text = question.text
             # Remove HTML tags but keep content
@@ -1227,7 +1294,17 @@ class XmlReader:
         elif question_type == 'FIB':
             answer_text = self._format_fib_markdown(question)
             if answer_text:
-                lines.append(answer_text)
+                # For FIB questions, prefix with question number since we skipped question.text above
+                question_number = None
+                if question.index is not None:
+                    question_number = question.index
+                elif question.number_provided is not None:
+                    question_number = question.number_provided
+                
+                if question_number is not None:
+                    lines.append(f"{question_number}. {answer_text}")
+                else:
+                    lines.append(answer_text)
         elif question_type == 'MS':
             answer_text = self._format_multi_select_markdown(question)
             if answer_text:
@@ -1265,7 +1342,8 @@ class XmlReader:
                 feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
             lines.append(f"@Feedback: {feedback_text}")
         
-        return "\n".join(lines)
+        # Use double newlines so each logical line becomes a paragraph (hard breaks, not soft)
+        return "\n\n".join(lines)
     
     def _format_multiple_choice_markdown(self, question):
         """
@@ -1287,7 +1365,8 @@ class XmlReader:
                     answer_text = soup.get_text(separator=' ', strip=True)
                 except:
                     answer_text = re.sub(r'\s+', ' ', answer_text).strip()
-                lines.append(f"{letter}. {marker}{answer_text}")
+                # Indent as level 2 list (4 spaces for markdown level 2)
+                lines.append(f"    {letter}. {marker}{answer_text}")
                 if answer.answer_feedback:
                     feedback_text = answer.answer_feedback
                     try:
@@ -1295,7 +1374,7 @@ class XmlReader:
                         feedback_text = soup.get_text(separator=' ', strip=True)
                     except:
                         feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
-                    lines.append(f"@Feedback: {feedback_text}")
+                    lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
     def _format_true_false_markdown(self, question):
@@ -1308,18 +1387,21 @@ class XmlReader:
         if tf:
             true_marker = "*" if tf.true_weight and tf.true_weight > 0 else ""
             false_marker = "*" if tf.false_weight and tf.false_weight > 0 else ""
-            lines.append(f"a. {true_marker}True")
+            # Indent as level 2 list (4 spaces for markdown level 2)
+            lines.append(f"    a. {true_marker}True")
             if tf.true_feedback:
-                lines.append(f"@Feedback: {tf.true_feedback}")
-            lines.append(f"b. {false_marker}False")
+                lines.append(f"    @Feedback: {tf.true_feedback}")
+            lines.append(f"    b. {false_marker}False")
             if tf.false_feedback:
-                lines.append(f"@Feedback: {tf.false_feedback}")
+                lines.append(f"    @Feedback: {tf.false_feedback}")
         return "\n".join(lines)
     
     def _format_fib_markdown(self, question):
         """
         Format fill in the blanks question.
-        Format: Question text with [blank] markers where answers go
+        Format: Question text with [answer] markers where answers go
+        Example: "A [rose,flower] by any other name would smell as [sweet,good]."
+        Note: Clean HTML tags but preserve spacing (CDATA cleaning was skipped during parsing).
         """
         lines = []
         fibs = question.get_fibs()
@@ -1327,10 +1409,21 @@ class XmlReader:
         for fib in fibs:
             if fib.type == 'fibquestion':
                 if fib.text:
-                    current_text += fib.text
+                    # Clean HTML tags but preserve spacing
+                    from bs4 import BeautifulSoup
+                    try:
+                        soup = BeautifulSoup(fib.text, 'html.parser')
+                        cleaned_text = soup.get_text(separator=' ', strip=False)
+                        current_text += cleaned_text
+                    except Exception:
+                        # Fallback: use text as-is if BeautifulSoup fails
+                        current_text += fib.text
             elif fib.type == 'fibanswer':
-                # Insert blank marker [ ] where the answer should be
-                current_text += "[ ]"
+                # Insert answer in brackets [answer] where the blank should be
+                if fib.text:
+                    current_text += f" [{fib.text}]"
+                else:
+                    current_text += " [ ]"
         if current_text:
             lines.append(current_text)
         return "\n".join(lines)
@@ -1354,7 +1447,8 @@ class XmlReader:
                     answer_text = soup.get_text(separator=' ', strip=True)
                 except:
                     answer_text = re.sub(r'\s+', ' ', answer_text).strip()
-                lines.append(f"{letter}. {marker}{answer_text}")
+                # Indent as level 2 list (4 spaces for markdown level 2)
+                lines.append(f"    {letter}. {marker}{answer_text}")
                 if answer.answer_feedback:
                     feedback_text = answer.answer_feedback
                     try:
@@ -1362,48 +1456,130 @@ class XmlReader:
                         feedback_text = soup.get_text(separator=' ', strip=True)
                     except:
                         feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
-                    lines.append(f"@Feedback: {feedback_text}")
+                    lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
     def _format_matching_markdown(self, question):
         """
         Format matching question.
-        Format: choice_text = answer_text (one per line)
+        Format: a. choice_text = answer_text (on same line, with enumeration)
+        Preserves inline HTML styling (bold, italic, etc.) but removes block-level tags (p, div, etc.)
         """
         lines = []
         matching = question.get_matching()
         if matching:
             choices = matching.get_matching_choices()
-            for choice in choices:
-                lines.append(f"{choice.choice_text} =")
-                answers = choice.get_matching_answers()
-                for answer in answers:
-                    lines.append(answer.answer_text)
+            for idx, choice in enumerate(choices, start=1):
+                letter = chr(96 + idx)  # a, b, c, etc.
+                
+                # Remove block-level HTML tags but preserve inline styling
+                choice_text = self._remove_block_tags_preserve_inline(choice.choice_text)
+                
+                # Use the related manager matching_answers (from ForeignKey in MatchingAnswer)
+                answers = choice.matching_answers.all()
+                if answers:
+                    # Get the first matching answer (typically there's one per choice)
+                    answer = answers[0]
+                    answer_text = self._remove_block_tags_preserve_inline(answer.answer_text)
+                    # Indent as level 2 list (4 spaces for markdown level 2)
+                    lines.append(f"    {letter}. {choice_text} = {answer_text}")
+                else:
+                    # No answer found, just show choice
+                    lines.append(f"    {letter}. {choice_text} =")
         return "\n".join(lines)
+    
+    def _remove_block_tags_preserve_inline(self, html_text):
+        """
+        Remove block-level HTML tags (p, div, etc.) but preserve inline styling tags (strong, em, b, i, etc.).
+        This allows formatting like bold/italic to be preserved while removing tags that cause line breaks.
+        Returns HTML string with inline tags preserved.
+        """
+        if not html_text:
+            return ''
+        
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_text, 'html.parser')
+            
+            # Unwrap block-level tags (these cause line breaks) but preserve their content and inline tags
+            block_tags = ['p', 'div', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'ul', 'ol']
+            for tag_name in block_tags:
+                for tag in soup.find_all(tag_name):
+                    # Unwrap removes the tag but keeps its content (including inline tags)
+                    tag.unwrap()
+            
+            # Get the HTML string with inline tags preserved
+            result = str(soup)
+            # Clean up: remove leading/trailing whitespace and normalize internal whitespace
+            # But preserve HTML tag structure
+            result = re.sub(r'>\s+<', '><', result)  # Remove whitespace between tags
+            result = re.sub(r'\s+', ' ', result)  # Normalize whitespace
+            result = result.strip()
+            return result
+        except Exception:
+            # Fallback: if parsing fails, just clean whitespace but preserve HTML structure
+            cleaned = re.sub(r'>\s+<', '><', html_text)
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            return cleaned
     
     def _format_ordering_markdown(self, question):
         """
         Format ordering question.
-        Format: numbered list (1., 2., 3., etc.)
+        Format: lettered list (a., b., c., etc.) with HTML tags cleaned, indented as level 2 list
         """
         lines = []
         orderings = question.get_orderings()
-        for ordering in orderings:
-            lines.append(f"{ordering.order}. {ordering.text}")
+        for idx, ordering in enumerate(orderings, start=1):
+            letter = chr(96 + idx)  # a, b, c, etc.
+            # Clean HTML from ordering text
+            ordering_text = ordering.text
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(ordering_text, 'html.parser')
+                ordering_text = soup.get_text(separator=' ', strip=True)
+            except:
+                import re
+                ordering_text = re.sub(r'\s+', ' ', ordering_text).strip()
+            # Indent as level 2 list (4 spaces for markdown level 2)
+            lines.append(f"    {letter}. {ordering_text}")
             if ordering.ord_feedback:
-                lines.append(f"@Feedback: {ordering.ord_feedback}")
+                feedback_text = ordering.ord_feedback
+                try:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(feedback_text, 'html.parser')
+                    feedback_text = soup.get_text(separator=' ', strip=True)
+                except:
+                    import re
+                    feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
+                lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
     def _format_written_response_markdown(self, question):
         """
         Format written response question.
-        Format: Correct Answer: [answer key text]
+        Format: Blank line, then "Correct Answer:" indented, then indented answer text.
+        Use double newlines to ensure hard paragraph breaks (not soft returns) in DOCX.
         """
         lines = []
         wr = question.get_written_response()
         if wr and wr.answer_key:
-            lines.append(f"Correct Answer: {wr.answer_key}")
-        return "\n".join(lines)
+            # Add blank line first (double newline for hard paragraph break)
+            lines.append("")
+            # Clean HTML from answer text
+            answer_text = wr.answer_key
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(answer_text, 'html.parser')
+                answer_text = soup.get_text(separator=' ', strip=True)
+            except:
+                import re
+                answer_text = re.sub(r'\s+', ' ', answer_text).strip()
+            # Indent with regular spaces (3 for label, 7 for answer) to mimic margin
+            # Avoid 4+ leading spaces to prevent markdown list or code block detection
+            lines.append(f"Correct Answer:")
+            lines.append(f"{answer_text}")
+        # Use double newlines so each logical line becomes a paragraph (hard breaks)
+        return "\n\n".join(lines)
     
     def convert_markdown_to_docx(self, markdown_text, output_path):
         """

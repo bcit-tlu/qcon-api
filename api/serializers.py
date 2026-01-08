@@ -239,6 +239,15 @@ class QuestionSerializer(serializers.ModelSerializer):
     matching = MatchingSerializer(many=True, allow_null=True)
     ordering = serializers.SerializerMethodField()
     written_response = WrittenResponseSerializer(many=True, allow_null=True)
+    points = serializers.SerializerMethodField()
+    
+    def get_points(self, obj):
+        """Normalize points: remove trailing zeros and decimal if not needed (e.g., 1.0000 -> '1', 1.5 -> '1.5')"""
+        if obj.points is None:
+            return None
+        # Convert to normalized string: remove trailing zeros and decimal point if not needed
+        normalized = str(float(obj.points)).rstrip('0').rstrip('.')
+        return normalized if normalized else '0'
 
     def get_fib(self, question):
         ordering_queryset = question.get_fibs()
@@ -306,6 +315,15 @@ class QuestionPackageSerializer(serializers.ModelSerializer):
     matching = MatchingSerializer(many=True, allow_null=True)
     ordering = OrderingSerializer(many=True, allow_null=True)
     written_response = WrittenResponseSerializer(many=True, allow_null=True)
+    points = serializers.SerializerMethodField()
+    
+    def get_points(self, obj):
+        """Normalize points: remove trailing zeros and decimal if not needed (e.g., 1.0000 -> '1', 1.5 -> '1.5')"""
+        if obj.points is None:
+            return None
+        # Convert to normalized string: remove trailing zeros and decimal point if not needed
+        normalized = str(float(obj.points)).rstrip('0').rstrip('.')
+        return normalized if normalized else '0'
 
     class Meta:
         model = Question
