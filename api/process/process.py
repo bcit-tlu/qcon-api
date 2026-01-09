@@ -38,7 +38,9 @@ class Process:
             })
         try:
             result = run_pandoc_task.apply_async(kwargs={"questionlibrary_id":self.questionlibrary.id}, ignore_result=False)
-            pandoc_task_result = result.get()
+            # Add timeout to prevent indefinite blocking (10 minutes for large files with many images)
+            # This prevents the websocket from timing out
+            pandoc_task_result = result.get(timeout=600)
             # logger.debug(pandoc_task_result)
             self.questionlibrary.pandoc_output = pandoc_task_result
         except Exception as e:

@@ -1,4 +1,5 @@
 import json
+import time
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.core.files.base import ContentFile
 import base64
@@ -50,7 +51,7 @@ class TextConsumer(JsonWebsocketConsumer):
         # self.channel_layer.group_discard(self.sessionid, self.channel_name)
 
     # Replace image marker  with actual img element and return a boolean
-    def replace_image(self, obj, key, process, logger):
+    def replace_image(self, obj, key, process, logger, all_images=None):
         regex = r"(?<=&lt;&lt;&lt;&lt;)\d+(?=&gt;&gt;&gt;&gt;)"
         obj_text = getattr(obj, key)
         is_image = None
@@ -67,9 +68,23 @@ class TextConsumer(JsonWebsocketConsumer):
                 logger.debug(f'Adding Image(s) to a {obj_name}')
                 
             image_ids = list(set(re.findall(regex, obj_text)))
+            # Build replacement map first, then apply all at once
+            replacements = []
             for image_id in image_ids:
-                image = process.questionlibrary.get_image(int(image_id))
-                img_src = image.image
+                image_id_int = int(image_id)
+                # Use pre-loaded images dict if available, otherwise query database
+                if all_images is not None:
+                    img_src = all_images.get(image_id_int)
+                    if img_src is None:
+                        # Fallback to database if not in cache (shouldn't happen)
+                        image = process.questionlibrary.get_image(image_id_int)
+                        img_src = image.image
+                        all_images[image_id_int] = img_src
+                else:
+                    # Fallback if all_images not provided (backwards compatibility)
+                    image = process.questionlibrary.get_image(image_id_int)
+                    img_src = image.image
+                
                 placeholder = "&lt;&lt;&lt;&lt;" + image_id + "&gt;&gt;&gt;&gt;"
 
                 if re.match(r"\<img\s+src\=\"data\:image\/x\-emf\;", img_src):
@@ -80,11 +95,28 @@ class TextConsumer(JsonWebsocketConsumer):
                         raise EMFImageError(obj.error)
                     except Exception as e:
                         logger.error(e)
+                        # Keep original if error handling fails
+                        if all_images is not None:
+                            img_src = all_images.get(image_id_int, img_src)
 
-                obj_text = re.sub(placeholder, lambda x: image.image, obj_text)
+                # Use string.replace() instead of regex for better performance
+                replacements.append((placeholder, img_src))
+
+            # Apply all replacements using string.replace() (much faster than regex)
+            replace_start = time.time()
+            for placeholder, img_src in replacements:
+                obj_text = obj_text.replace(placeholder, img_src)
+            replace_time = time.time() - replace_start
 
             setattr(obj, key, obj_text)
-            obj.save()
+            # Only save the specific field that changed, not the entire object
+            save_start = time.time()
+            obj.save(update_fields=[key])
+            save_time = time.time() - save_start
+            
+            if replace_time > 0.1 or save_time > 0.1:
+                print(f"[replace_image] {obj_name} {key}: replace={replace_time:.3f}s, save={save_time:.3f}s, img_size={len(img_src) if replacements else 0}")
+            
             return True
         return False
 
@@ -271,12 +303,15 @@ class TextConsumer(JsonWebsocketConsumer):
 ###########################################
         logger.debug("Start Adding Images back ...")
         try:
+            # Pre-load all images into a dict to avoid repeated database queries
+            all_images = {img.id: img.image for img in Image.objects.filter(question_library=process.questionlibrary)}
+            
             # select all sections for this QL
             sections = process.questionlibrary.get_sections()
             for section in sections:
                 
                 # DO NOT DELETE: replace images in section.text
-                section_replace_image = self.replace_image(section, "text", process, logger)
+                section_replace_image = self.replace_image(section, "text", process, logger, all_images)
 
                 # select all questions for this QL
                 questions = Question.objects.filter(section=section)
@@ -306,75 +341,75 @@ class TextConsumer(JsonWebsocketConsumer):
 ###########################################
 
                     # replace image in question.text if exist
-                    img_replaced = self.replace_image(question, 'text', process, logger) or img_replaced
+                    img_replaced = self.replace_image(question, 'text', process, logger, all_images) or img_replaced
 
                     match(question.questiontype):
                         case 'MC':
                             #Check MC
                             MC_answer_objects = MultipleChoiceAnswer.objects.filter(multiple_choice__question=question)
                             for answer in MC_answer_objects:
-                                img_replaced = self.replace_image(answer, 'answer', process, logger) or img_replaced
+                                img_replaced = self.replace_image(answer, 'answer', process, logger, all_images) or img_replaced
                                 is_table = re.search(r"<table(.|\n)+?</table>", answer.answer) or is_table
                                 if answer.answer_feedback is not None:
-                                    img_replaced = self.replace_image(answer, 'answer_feedback', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(answer, 'answer_feedback', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", answer.answer_feedback) or is_table
                         case 'TF':
                             #Check TF
                             TF_object = TrueFalse.objects.filter(question=question)
                             for tf in TF_object:
                                 if tf.true_feedback is not None:
-                                    img_replaced = self.replace_image(tf, 'true_feedback', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(tf, 'true_feedback', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", tf.true_feedback) or is_table
                                 if tf.false_feedback is not None:
-                                    img_replaced = self.replace_image(tf, 'false_feedback', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(tf, 'false_feedback', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", tf.false_feedback) or is_table
                         case 'FIB' | 'FMB':
                             #Check FIB
                             FIB_object = Fib.objects.filter(question=question)
                             for fib_question in FIB_object:
-                                img_replaced = self.replace_image(fib_question, 'text', process, logger) or img_replaced
+                                img_replaced = self.replace_image(fib_question, 'text', process, logger, all_images) or img_replaced
                                 is_table = re.search(r"<table(.|\n)+?</table>", fib_question.text) or is_table
                         case 'MS' | 'MR':
                             #Check MS
                             MS_answer_objects = MultipleSelectAnswer.objects.filter(multiple_select__question=question)
                             for answer in MS_answer_objects:
-                                img_replaced = self.replace_image(answer, 'answer', process, logger) or img_replaced
+                                img_replaced = self.replace_image(answer, 'answer', process, logger, all_images) or img_replaced
                                 is_table = re.search(r"<table(.|\n)+?</table>", answer.answer) or is_table
                                 if answer.answer_feedback is not None:
-                                    img_replaced = self.replace_image(answer, 'answer_feedback', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(answer, 'answer_feedback', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", answer.answer_feedback) or is_table
                         case 'ORD':
                             #Check ORD
                             ORD_objects = Ordering.objects.filter(question=question)
                             for ordering in ORD_objects:
                                 if ordering.text is not None:
-                                    img_replaced = self.replace_image(ordering, 'text', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(ordering, 'text', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", ordering.text) or is_table
                                 if ordering.ord_feedback is not None:
-                                    img_replaced = self.replace_image(ordering, 'ord_feedback', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(ordering, 'ord_feedback', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", ordering.ord_feedback) or is_table
                         case 'MAT' | 'MT':
                             #Check MAT answer
                             MAT_answer_objects = MatchingAnswer.objects.filter(matching_choice__matching__question=question)
                             for mat_answer in MAT_answer_objects:
                                 if mat_answer.answer_text is not None:
-                                    img_replaced = self.replace_image(mat_answer, 'answer_text', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(mat_answer, 'answer_text', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", mat_answer.answer_text) or is_table
                             #Check MAT choice
                             MAT_choice_objects = MatchingChoice.objects.filter(matching__question=question)
                             for mat_choice in MAT_choice_objects:
                                 if mat_choice.choice_text is not None:
-                                    img_replaced = self.replace_image(mat_choice, 'choice_text', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(mat_choice, 'choice_text', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", mat_choice.choice_text) or is_table
                         case 'WR' | 'E':
                             #Check WR
                             WR_objects = WrittenResponse.objects.filter(question=question)
                             for wr in WR_objects:
                                 if wr.initial_text is not None:
-                                    img_replaced = self.replace_image(wr, 'initial_text', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(wr, 'initial_text', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", wr.initial_text) or is_table
                                 if wr.answer_key is not None:
-                                    img_replaced = self.replace_image(wr, 'answer_key', process, logger) or img_replaced
+                                    img_replaced = self.replace_image(wr, 'answer_key', process, logger, all_images) or img_replaced
                                     is_table = re.search(r"<table(.|\n)+?</table>", wr.answer_key) or is_table
 
 
