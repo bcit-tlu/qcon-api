@@ -246,6 +246,9 @@ class ScormToJson(APIView):
         if serializer.is_valid():
             instance = serializer.save()
             
+            logger.addFilter(QuestionlibraryFilenameFilter(instance))
+            logger.info(f"[{instance.id}] SCORM to JSON conversion started")
+            
             try:
                 # Step 1: Extract SCORM ZIP and parse XML using XmlReader
                 from .scorm.XmlReader import XmlReader
@@ -318,6 +321,9 @@ class JsonToDocx(APIView):
             ql_instance.create_directory()
             ql_instance.save()
             
+            logger.addFilter(QuestionlibraryFilenameFilter(ql_instance))
+            logger.info(f"[{ql_instance.id}] JSON to DOCX conversion started")
+            
             try:
                 # Step 1: Convert Django models to markdown (matching formatter_output format)
                 from .scorm.XmlReader import XmlReader
@@ -329,6 +335,67 @@ class JsonToDocx(APIView):
                 # Since we don't need to parse XML, we create a minimal instance
                 xml_reader = object.__new__(XmlReader)  # Create instance without calling __init__
                 markdown_text = xml_reader.format_to_markdown(ql_instance)
+                
+                # Extract base64 images from HTML img tags and save as files
+                # Pandoc doesn't support base64 data URIs when converting markdown to DOCX
+                # So we need to extract them to files and use file references
+                import base64
+                import uuid
+                import os
+                import re as re_module
+                image_counter = 0
+                base64_pattern = r'<img\s+([^>]*?)src=["\'](data:image/([^;]+);base64,([^"\']+))["\']([^>]*?)>'
+                
+                def replace_base64_with_file(match):
+                    nonlocal image_counter
+                    before_src = match.group(1)
+                    full_data_uri = match.group(2)
+                    image_type = match.group(3)  # png, jpeg, etc.
+                    base64_data = match.group(4)
+                    after_src = match.group(5)
+                    
+                    try:
+                        # Decode base64 image
+                        image_data = base64.b64decode(base64_data)
+                        
+                        # Determine file extension from MIME type
+                        ext_map = {
+                            'png': 'png',
+                            'jpeg': 'jpg',
+                            'jpg': 'jpg',
+                            'gif': 'gif',
+                            'svg+xml': 'svg',
+                            'webp': 'webp'
+                        }
+                        ext = ext_map.get(image_type.lower(), 'png')
+                        
+                        # Save image to temporary file
+                        image_filename = f"image_{image_counter}_{uuid.uuid4().hex[:8]}.{ext}"
+                        image_path = path.join(ql_instance.folder_path, image_filename)
+                        
+                        with open(image_path, 'wb') as img_file:
+                            img_file.write(image_data)
+                        
+                        image_counter += 1
+                        logger.info(f"Extracted base64 image to file: {image_filename} ({len(image_data)} bytes)")
+                        
+                        # Extract alt text if present
+                        alt_match = re.search(r'alt=["\']([^"\']*)["\']', before_src + after_src)
+                        alt_text = alt_match.group(1) if alt_match else 'image'
+                        
+                        # Use markdown image syntax with relative path (filename only)
+                        # We'll change working directory to folder_path before Pandoc conversion
+                        markdown_image = f'![{alt_text}]({image_filename})'
+                        logger.debug(f"Replacing base64 img tag with markdown: {markdown_image}")
+                        return markdown_image
+                    except Exception as e:
+                        logger.error(f"Error extracting base64 image: {str(e)}")
+                        # Return original if extraction fails
+                        return match.group(0)
+                
+                # Replace all base64 img tags with file references
+                markdown_text = re.sub(base64_pattern, replace_base64_with_file, markdown_text)
+                logger.info(f"Extracted {image_counter} base64 images to files")
                 
                 # Step 2: Convert markdown to DOCX using Pandoc (reverse of run_pandoc_task)
                 # Use main_title if it exists, otherwise use filtered_main_title
@@ -348,55 +415,121 @@ class JsonToDocx(APIView):
                 
                 # Convert markdown to DOCX
                 # Use similar settings as the forward conversion but in reverse
-                mdblockquotePath = "./pandoc/pandoc-filters/mdblockquote.lua"
-                emptyparaPath = "./pandoc/pandoc-filters/emptypara.lua"
+                # Get absolute paths for lua filters before changing directory
+                import os as os_module
+                # Calculate base directory (project root) - views.py is in api/, so go up one level
+                current_file_dir = os_module.path.dirname(os_module.path.abspath(__file__))  # /code/api
+                base_dir = os_module.path.dirname(current_file_dir)  # /code
+                mdblockquotePath = os_module.path.join(base_dir, "pandoc", "pandoc-filters", "mdblockquote.lua")
+                emptyparaPath = os_module.path.join(base_dir, "pandoc", "pandoc-filters", "emptypara.lua")
+                # Make paths absolute
+                mdblockquotePath = os_module.path.abspath(mdblockquotePath)
+                emptyparaPath = os_module.path.abspath(emptyparaPath)
+                logger.debug(f"Lua filter paths: mdblockquote={mdblockquotePath}, emptypara={emptyparaPath}")
                 
                 # Create temporary markdown file
                 temp_md_path = path.join(ql_instance.folder_path, "temp_markdown.md")
                 with open(temp_md_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_text)
                 
+                # Log markdown preview and verify image file references
+                # Check for image file references in markdown
+                import re as re_module
+                import glob
+                # Check for markdown image syntax with file references
+                file_refs = re_module.findall(r'!\[.*?\]\((image_\d+_[^)]+)\)', markdown_text)
+                logger.info(f"Found {len(file_refs)} image file references in markdown")
+                # List image files in the folder and their sizes
+                image_files = glob.glob(path.join(ql_instance.folder_path, "image_*.*"))
+                image_info = []
+                total_image_size = 0
+                for img_file in image_files:
+                    if path.exists(img_file):
+                        img_size = path.getsize(img_file)
+                        total_image_size += img_size
+                        img_size_mb = img_size / (1024 * 1024)
+                        image_info.append(f"{path.basename(img_file)} ({img_size_mb:.2f} MB, {img_size} bytes)")
+                if len(image_files) > 0:
+                    logger.info(f"Found {len(image_files)} image files in folder:")
+                    for info in image_info:
+                        logger.info(f"  - {info}")
+                    logger.info(f"Total image size: {total_image_size / (1024 * 1024):.2f} MB ({total_image_size} bytes)")
+                logger.info(f"Markdown file created at: {temp_md_path}")
+                
                 try:
-                    # Convert markdown to DOCX (reverse of DOCX → markdown)
-                    # First convert markdown to HTML (intermediate step like forward conversion)
-                    pandoc_md_to_html = pypandoc.convert_file(
-                        temp_md_path,
-                        format='markdown_github+fancy_lists+emoji+hard_line_breaks+all_symbols_escapable+escaped_line_breaks+pipe_tables+startnum+tex_math_dollars',
-                        to='html+empty_paragraphs+tex_math_single_backslash',
-                        extra_args=[
-                            '--no-highlight',
-                            '--embed-resources',
-                            '--markdown-headings=atx',
-                            '--preserve-tabs',
-                            '--wrap=preserve',
-                            '--indent=false',
-                            '--mathml',
-                            '--ascii',
-                            '--lua-filter=' + mdblockquotePath,
-                            '--lua-filter=' + emptyparaPath,
+                    # Convert markdown directly to DOCX
+                    # Images are now file references, so Pandoc should be able to find and embed them
+                    original_cwd = os_module.getcwd()
+                    try:
+                        os_module.chdir(ql_instance.folder_path)
+                        # Use relative path since we changed directory
+                        temp_md_rel_path = "temp_markdown.md"
+                        docx_output_name = os_module.path.basename(docx_path)
+                        logger.info(f"Converting markdown with image file references to DOCX (working dir: {os_module.getcwd()})")
+                        # Verify images exist before conversion
+                        import glob as glob_module
+                        existing_images = glob_module.glob("image_*.*")
+                        logger.info(f"Images in working directory before Pandoc: {existing_images}")
+                        # Verify markdown has image references
+                        with open(temp_md_rel_path, 'r', encoding='utf-8') as f:
+                            md_content = f.read()
+                            image_refs_in_md = re_module.findall(r'!\[.*?\]\((image_\d+_[^)]+)\)', md_content)
+                            logger.info(f"Image references found in markdown file: {image_refs_in_md}")
+                        # Call pandoc directly via subprocess to capture warnings/errors
+                        import subprocess
+                        pandoc_cmd = [
+                            "pandoc",
+                            temp_md_rel_path,
+                            "-f",
+                            "markdown_github+fancy_lists+emoji+hard_line_breaks+all_symbols_escapable+escaped_line_breaks+pipe_tables+startnum+tex_math_dollars",
+                            "-t",
+                            "docx+empty_paragraphs",
+                            "-o",
+                            docx_output_name,
+                            "--no-highlight",
+                            "--preserve-tabs",
+                            "--wrap=preserve",
+                            "--indent=false",
+                            "--mathml",
+                            "--ascii",
+                            "--lua-filter=" + mdblockquotePath,
+                            "--lua-filter=" + emptyparaPath,
                         ]
-                    )
-                    
-                    # Then convert HTML to DOCX
-                    pypandoc.convert_text(
-                        pandoc_md_to_html,
-                        format='html+empty_paragraphs',
-                        to='docx+empty_paragraphs',
-                        outputfile=docx_path,
-                        extra_args=[
-                            '--no-highlight',
-                            '--preserve-tabs',
-                            '--wrap=preserve',
-                            '--indent=false',
-                            '--mathml',
-                            '--ascii',
-                        ]
-                    )
+                        logger.info(f"Running pandoc command: {' '.join(pandoc_cmd)}")
+                        result = subprocess.run(
+                            pandoc_cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                        )
+                        if result.returncode != 0:
+                            logger.error(f"Pandoc failed (exit {result.returncode}): {result.stderr}")
+                            raise Exception(f"Pandoc failed: {result.stderr}")
+                        if result.stderr:
+                            logger.warning(f"Pandoc warnings: {result.stderr}")
+                        logger.info(f"Pandoc markdown to DOCX conversion completed")
+                    finally:
+                        os_module.chdir(original_cwd)
                 finally:
                     # Clean up temporary markdown file
                     if path.exists(temp_md_path):
                         from os import remove
                         remove(temp_md_path)
+                    
+                    # Clean up temporary image files
+                    import glob
+                    image_files = glob.glob(path.join(ql_instance.folder_path, "image_*.png")) + \
+                                  glob.glob(path.join(ql_instance.folder_path, "image_*.jpg")) + \
+                                  glob.glob(path.join(ql_instance.folder_path, "image_*.jpeg")) + \
+                                  glob.glob(path.join(ql_instance.folder_path, "image_*.gif")) + \
+                                  glob.glob(path.join(ql_instance.folder_path, "image_*.svg")) + \
+                                  glob.glob(path.join(ql_instance.folder_path, "image_*.webp"))
+                    for img_file in image_files:
+                        try:
+                            if path.exists(img_file):
+                                remove(img_file)
+                        except Exception as e:
+                            logger.warning(f"Could not remove temporary image file {img_file}: {str(e)}")
                 
                 # Step 3: Return DOCX file
                 from django.core.files import File
@@ -406,8 +539,11 @@ class JsonToDocx(APIView):
                 file_response = FileResponse(ql_instance.temp_file)
                 file_response['Content-Disposition'] = f'attachment; filename="{docx_filename}"'
                 
+                # Log DOCX file size
+                docx_size_bytes = path.getsize(docx_path)
+                docx_size_mb = docx_size_bytes / (1024 * 1024)
                 logger.addFilter(QuestionlibraryFilenameFilter(ql_instance))
-                logger.info(f"[{ql_instance.id}] JSON to DOCX conversion completed")
+                logger.info(f"[{ql_instance.id}] JSON to DOCX conversion completed - DOCX size: {docx_size_mb:.2f} MB ({docx_size_bytes} bytes)")
                 
                 ql_instance.cleanup()
                 

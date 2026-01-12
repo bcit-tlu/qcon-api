@@ -20,6 +20,7 @@ def run_pandoc_task(temp_file_path, filename):
         emptyparaPath = "./pandoc/pandoc-filters/emptypara.lua"
         imageFilterPath = "./pandoc/pandoc-filters/image.lua"
         tables = "./pandoc/pandoc-filters/tables.lua"
+        linebreakPath = "./pandoc/pandoc-filters/linebreak.lua"
         # listsPath = "./api/pandoc/pandoc-filters/lists.lua"
 
         pandoc_word_to_html = pypandoc.convert_file(
@@ -52,6 +53,7 @@ def run_pandoc_task(temp_file_path, filename):
                         '--ascii',
                         '--lua-filter=' + mdblockquotePath, 
                         '--lua-filter=' + emptyparaPath,
+                        '--lua-filter=' + linebreakPath,
                         # '--lua-filter=' + tables
                         ])
         pandoc_html_to_md = pandoc_html_to_md.rstrip()

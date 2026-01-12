@@ -9,6 +9,7 @@ from os import path, makedirs
 from django.conf import settings
 from bs4 import BeautifulSoup
 import re
+import base64
 from api.models import (
     QuestionLibrary, Section, Question,
     MultipleChoice, MultipleChoiceAnswer,
@@ -292,6 +293,7 @@ class XmlReader:
         """
         Extract text content from material element, handling CDATA.
         Automatically cleans CDATA whitespace and HTML tags.
+        Converts SCORM image file paths to base64 data URIs.
         """
         text_parts = []
         
@@ -309,6 +311,8 @@ class XmlReader:
                         raw_text += mattext.tail
                     # Clean CDATA whitespace while preserving HTML tags
                     cleaned_text = self._clean_cdata_text(raw_text)
+                    # Convert SCORM image file paths to base64
+                    cleaned_text = self._convert_scorm_images_to_base64(cleaned_text)
                     text_parts.append(cleaned_text)
         
         return ''.join(text_parts)
@@ -317,6 +321,7 @@ class XmlReader:
         """
         Extract question text from presentation element.
         Automatically cleans CDATA whitespace and HTML tags.
+        Converts SCORM image file paths to base64 data URIs.
         """
         text_parts = []
         
@@ -332,6 +337,8 @@ class XmlReader:
                         raw_text += mattext.tail
                     # Clean CDATA whitespace while preserving HTML tags
                     cleaned_text = self._clean_cdata_text(raw_text)
+                    # Convert SCORM image file paths to base64
+                    cleaned_text = self._convert_scorm_images_to_base64(cleaned_text)
                     text_parts.append(cleaned_text)
         
         return ''.join(text_parts)
@@ -347,6 +354,7 @@ class XmlReader:
         """
         Extract text from feedback element.
         Automatically cleans CDATA whitespace while preserving HTML tags.
+        Converts SCORM image file paths to base64 data URIs.
         """
         material = feedback_el.find('material')
         if material is not None:
@@ -354,7 +362,9 @@ class XmlReader:
             if mattext is not None:
                 raw_text = mattext.text if mattext.text else ''
                 # Clean CDATA whitespace while preserving HTML tags
-                return self._clean_cdata_text(raw_text)
+                cleaned_text = self._clean_cdata_text(raw_text)
+                # Convert SCORM image file paths to base64
+                return self._convert_scorm_images_to_base64(cleaned_text)
         return None
     
     def _clean_cdata_text(self, text):
@@ -392,6 +402,203 @@ class XmlReader:
             # Fallback: if regex fails, just normalize whitespace
             cleaned = re.sub(r'\s+', ' ', text).strip()
             return cleaned
+    
+    def _convert_scorm_images_to_base64(self, html_text):
+        """
+        Convert SCORM image file paths to base64 data URIs in HTML text.
+        
+        SCORM packages store images as files (e.g., ./assessment-assets/.../image_1.png)
+        in the ZIP. This method extracts those images and converts them to base64
+        data URIs so the JSON is self-contained.
+        
+        Args:
+            html_text: HTML text containing <img> tags with file paths
+            
+        Returns:
+            str: HTML text with image file paths replaced with base64 data URIs
+        """
+        if not html_text or not self.extracted_path:
+            return html_text
+        
+        # Find all img tags with src attributes
+        img_pattern = r'<img\s+([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>'
+        
+        def replace_image(match):
+            before_src = match.group(1)
+            img_src = match.group(2)
+            after_src = match.group(3)
+            
+            # Skip if already base64 or data URI
+            if img_src.startswith('data:') or 'base64' in img_src:
+                return match.group(0)
+            
+            # Skip if absolute URL
+            if img_src.startswith('http://') or img_src.startswith('https://'):
+                return match.group(0)
+            
+            try:
+                # Extract image path (remove leading ./ if present)
+                img_path = img_src.lstrip('./')
+                
+                # Try to find the image file in the extracted SCORM directory
+                # SCORM images are typically in assessment-assets folder
+                possible_paths = [
+                    path.join(self.extracted_path, img_path),
+                    path.join(self.extracted_path, 'assessment-assets', path.basename(img_path)),
+                ]
+                
+                # Also try to find in any subdirectory
+                image_file = None
+                for possible_path in possible_paths:
+                    if path.exists(possible_path) and path.isfile(possible_path):
+                        image_file = possible_path
+                        break
+                
+                # If not found, search recursively
+                if not image_file:
+                    for root, dirs, files in os.walk(self.extracted_path):
+                        if path.basename(img_path) in files:
+                            image_file = path.join(root, path.basename(img_path))
+                            break
+                
+                if image_file and path.exists(image_file):
+                    # Read image file and convert to base64
+                    with open(image_file, 'rb') as f:
+                        image_data = f.read()
+                        base64_data = base64.b64encode(image_data).decode('utf-8')
+                    
+                    # Determine MIME type from file extension
+                    ext = path.splitext(image_file)[1].lower()
+                    mime_types = {
+                        '.png': 'image/png',
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.gif': 'image/gif',
+                        '.svg': 'image/svg+xml',
+                        '.webp': 'image/webp'
+                    }
+                    mime_type = mime_types.get(ext, 'image/png')
+                    
+                    # Replace with base64 data URI
+                    base64_src = f'data:{mime_type};base64,{base64_data}'
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Converted SCORM image {path.basename(image_file)} to base64 ({len(base64_data)} chars)")
+                    return f'<img {before_src}src="{base64_src}"{after_src}>'
+                else:
+                    # Image file not found, log warning
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"SCORM image not found: {img_src} (searched in {self.extracted_path})")
+                    # Return original img tag (will show as broken image or alt text)
+                    return match.group(0)
+            except Exception as e:
+                # If any error occurs, return original img tag
+                return match.group(0)
+        
+        # Replace all img tags
+        result = re.sub(img_pattern, replace_image, html_text)
+        return result
+    
+    def _convert_html_with_base64_images_to_markdown(self, html_text):
+        """
+        Convert HTML text with base64 images to markdown format.
+        
+        Preserves ALL <img> tags as HTML (Pandoc supports HTML in markdown).
+        Converts remaining HTML to plain text.
+        
+        Args:
+            html_text: HTML text containing image tags (base64 or file paths)
+            
+        Returns:
+            str: Markdown formatted text with img tags preserved as HTML
+        """
+        if not html_text:
+            return ''
+        
+        # Extract ALL img tags (both base64 and file paths) and preserve them as HTML
+        # Pattern to match any img tag
+        img_pattern = r'<img\s+[^>]*?>'
+        
+        # Store HTML img tags temporarily with placeholders
+        html_images = {}
+        image_counter = 0
+        
+        def preserve_img_tag(match):
+            nonlocal image_counter
+            # Preserve the entire img tag as HTML
+            full_img_tag = match.group(0)
+            placeholder = f'__HTML_IMAGE_{image_counter}__'
+            html_images[placeholder] = full_img_tag
+            image_counter += 1
+            return placeholder
+
+        # Preserve MathML blocks with placeholders so we can convert them to TeX
+        math_blocks = {}
+        math_counter = 0
+        math_pattern = r'<math[\s\S]*?</math>'
+
+        def preserve_math(match):
+            nonlocal math_counter
+            full_math = match.group(0)
+            placeholder = f'__MATH_BLOCK_{math_counter}__'
+            # Try to extract TeX from annotation
+            tex_match = re.search(
+                r'<annotation[^>]*encoding=["\']application/x-tex["\'][^>]*>(.*?)</annotation>',
+                full_math,
+                flags=re.IGNORECASE | re.DOTALL
+            )
+            tex = tex_match.group(1) if tex_match else None
+            math_blocks[placeholder] = {"tex": tex, "raw": full_math}
+            math_counter += 1
+            return placeholder
+        
+        # Replace all img tags and math blocks with placeholders
+        result = re.sub(img_pattern, preserve_img_tag, html_text)
+        result = re.sub(math_pattern, preserve_math, result, flags=re.IGNORECASE)
+        
+        # Convert remaining HTML to plain text using BeautifulSoup
+        try:
+            soup = BeautifulSoup(result, 'html.parser')
+            # Replace <br> with a placeholder so only those become hard breaks
+            for br in soup.find_all('br'):
+                br.replace_with('[[[BR]]]')
+            # Extract text while keeping other inline tags tight (no extra newlines)
+            text = soup.get_text(separator=' ', strip=False)
+            # Turn our placeholders into real newlines
+            text = text.replace('[[[BR]]]', '\n')
+        except Exception:
+            # Fallback: if BeautifulSoup fails, just clean up HTML tags manually
+            # But preserve placeholders
+            text = re.sub(r'<(?!/?__HTML_IMAGE_)[^>]+>', '', result)
+        
+        # Restore MathML (prefer TeX) and HTML img tags from placeholders
+        for placeholder, math_info in math_blocks.items():
+            replacement = None
+            if math_info.get("tex"):
+                tex = math_info["tex"].strip()
+                replacement = f"$$ {tex} $$"
+            else:
+                replacement = math_info.get("raw", "")
+            text = text.replace(placeholder, replacement)
+        for placeholder, html_img in html_images.items():
+            text = text.replace(placeholder, html_img)
+        
+        # Normalize whitespace on each line but keep explicit newlines and math/img blocks
+        text = text.replace('\r', '')
+        normalized_lines = []
+        for line in text.split('\n'):
+            stripped = line.strip()
+            if stripped == '':
+                normalized_lines.append('')
+                continue
+            if re.search(r'<img[^>]*>', stripped, flags=re.IGNORECASE) or re.search(r'<math', stripped, flags=re.IGNORECASE) or '$$' in stripped:
+                normalized_lines.append(stripped)
+            else:
+                normalized_lines.append(' '.join(stripped.split()))
+        text = '\n'.join(normalized_lines).strip()
+        
+        return text
     
     def _parse_multiple_choice(self, item_el, question_ident):
         """
@@ -1211,8 +1418,8 @@ class XmlReader:
             
             # Add section text if present and should be displayed
             if section.text and section.is_text_displayed:
-                # Convert HTML back to markdown if needed
-                section_text = section.text
+                # Convert HTML with base64 images to markdown
+                section_text = self._convert_html_with_base64_images_to_markdown(section.text)
                 lines.append(section_text)
             
             # Process questions in this section
@@ -1252,22 +1459,17 @@ class XmlReader:
             normalized_points = str(float(question.points)).rstrip('0').rstrip('.')
             lines.append(f"Points: {normalized_points}")
         
-        # Add question text (HTML format from SCORM, convert to plain text)
+        # Add question text (HTML format from SCORM, convert to markdown preserving base64 images)
         # Prefix with question number if available (e.g., "1. Question text")
         # Note: For FIB questions, skip displaying question.text here since FIB formatting includes all text parts
         if question.text and question.questiontype != 'FIB':
-            # Convert HTML to plain text if needed
-            question_text = question.text
-            # Remove HTML tags but keep content
-            import re
-            from bs4 import BeautifulSoup
-            try:
-                # Try to parse as HTML and extract text
-                soup = BeautifulSoup(question_text, 'html.parser')
-                question_text = soup.get_text(separator=' ', strip=True)
-            except:
-                # If not HTML, use as is but clean up extra whitespace
-                question_text = re.sub(r'\s+', ' ', question_text).strip()
+            # Convert HTML with base64 images to markdown
+            question_text = self._convert_html_with_base64_images_to_markdown(question.text)
+            
+            # Extract plain text for numbering (remove markdown formatting)
+            plain_text = re.sub(r'!\[.*?\]\([^)]+\)', '', question_text)  # Remove image markdown
+            plain_text = re.sub(r'<[^>]+>', '', plain_text)  # Remove any remaining HTML tags
+            plain_text = re.sub(r'\s+', ' ', plain_text).strip()
             
             # Prefix with question number if available
             question_number = None
@@ -1324,22 +1526,12 @@ class XmlReader:
         
         # Add hint if present (format: @Hint: or @HINT:)
         if question.hint:
-            hint_text = question.hint
-            try:
-                soup = BeautifulSoup(hint_text, 'html.parser')
-                hint_text = soup.get_text(separator=' ', strip=True)
-            except:
-                hint_text = re.sub(r'\s+', ' ', hint_text).strip()
+            hint_text = self._convert_html_with_base64_images_to_markdown(question.hint)
             lines.append(f"@Hint: {hint_text}")
         
         # Add feedback if present (format: @Feedback: or @FEEDBACK:)
         if question.feedback:
-            feedback_text = question.feedback
-            try:
-                soup = BeautifulSoup(feedback_text, 'html.parser')
-                feedback_text = soup.get_text(separator=' ', strip=True)
-            except:
-                feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
+            feedback_text = self._convert_html_with_base64_images_to_markdown(question.feedback)
             lines.append(f"@Feedback: {feedback_text}")
         
         # Use double newlines so each logical line becomes a paragraph (hard breaks, not soft)
@@ -1358,22 +1550,12 @@ class XmlReader:
                 letter = chr(96 + idx)  # a, b, c, etc.
                 # Correct answer has * before the letter (weight > 0)
                 marker = "*" if answer.weight and answer.weight > 0 else ""
-                # Clean HTML from answer text
-                answer_text = answer.answer
-                try:
-                    soup = BeautifulSoup(answer_text, 'html.parser')
-                    answer_text = soup.get_text(separator=' ', strip=True)
-                except:
-                    answer_text = re.sub(r'\s+', ' ', answer_text).strip()
+                # Convert HTML with base64 images to markdown
+                answer_text = self._convert_html_with_base64_images_to_markdown(answer.answer)
                 # Indent as level 2 list (4 spaces for markdown level 2)
                 lines.append(f"    {letter}. {marker}{answer_text}")
                 if answer.answer_feedback:
-                    feedback_text = answer.answer_feedback
-                    try:
-                        soup = BeautifulSoup(feedback_text, 'html.parser')
-                        feedback_text = soup.get_text(separator=' ', strip=True)
-                    except:
-                        feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
+                    feedback_text = self._convert_html_with_base64_images_to_markdown(answer.answer_feedback)
                     lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1390,10 +1572,12 @@ class XmlReader:
             # Indent as level 2 list (4 spaces for markdown level 2)
             lines.append(f"    a. {true_marker}True")
             if tf.true_feedback:
-                lines.append(f"    @Feedback: {tf.true_feedback}")
+                feedback_text = self._convert_html_with_base64_images_to_markdown(tf.true_feedback)
+                lines.append(f"    @Feedback: {feedback_text}")
             lines.append(f"    b. {false_marker}False")
             if tf.false_feedback:
-                lines.append(f"    @Feedback: {tf.false_feedback}")
+                feedback_text = self._convert_html_with_base64_images_to_markdown(tf.false_feedback)
+                lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
     def _format_fib_markdown(self, question):
@@ -1409,15 +1593,9 @@ class XmlReader:
         for fib in fibs:
             if fib.type == 'fibquestion':
                 if fib.text:
-                    # Clean HTML tags but preserve spacing
-                    from bs4 import BeautifulSoup
-                    try:
-                        soup = BeautifulSoup(fib.text, 'html.parser')
-                        cleaned_text = soup.get_text(separator=' ', strip=False)
-                        current_text += cleaned_text
-                    except Exception:
-                        # Fallback: use text as-is if BeautifulSoup fails
-                        current_text += fib.text
+                    # Convert HTML with base64 images to markdown, preserving spacing
+                    cleaned_text = self._convert_html_with_base64_images_to_markdown(fib.text)
+                    current_text += cleaned_text
             elif fib.type == 'fibanswer':
                 # Insert answer in brackets [answer] where the blank should be
                 if fib.text:
@@ -1440,22 +1618,12 @@ class XmlReader:
             for idx, answer in enumerate(answers, start=1):
                 letter = chr(96 + idx)  # a, b, c, etc.
                 marker = "*" if answer.is_correct else ""
-                # Clean HTML from answer text
-                answer_text = answer.answer
-                try:
-                    soup = BeautifulSoup(answer_text, 'html.parser')
-                    answer_text = soup.get_text(separator=' ', strip=True)
-                except:
-                    answer_text = re.sub(r'\s+', ' ', answer_text).strip()
+                # Convert HTML with base64 images to markdown
+                answer_text = self._convert_html_with_base64_images_to_markdown(answer.answer)
                 # Indent as level 2 list (4 spaces for markdown level 2)
                 lines.append(f"    {letter}. {marker}{answer_text}")
                 if answer.answer_feedback:
-                    feedback_text = answer.answer_feedback
-                    try:
-                        soup = BeautifulSoup(feedback_text, 'html.parser')
-                        feedback_text = soup.get_text(separator=' ', strip=True)
-                    except:
-                        feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
+                    feedback_text = self._convert_html_with_base64_images_to_markdown(answer.answer_feedback)
                     lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1472,15 +1640,15 @@ class XmlReader:
             for idx, choice in enumerate(choices, start=1):
                 letter = chr(96 + idx)  # a, b, c, etc.
                 
-                # Remove block-level HTML tags but preserve inline styling
-                choice_text = self._remove_block_tags_preserve_inline(choice.choice_text)
+                # Convert HTML with base64 images to markdown (preserves inline styling and images)
+                choice_text = self._convert_html_with_base64_images_to_markdown(choice.choice_text)
                 
                 # Use the related manager matching_answers (from ForeignKey in MatchingAnswer)
                 answers = choice.matching_answers.all()
                 if answers:
                     # Get the first matching answer (typically there's one per choice)
                     answer = answers[0]
-                    answer_text = self._remove_block_tags_preserve_inline(answer.answer_text)
+                    answer_text = self._convert_html_with_base64_images_to_markdown(answer.answer_text)
                     # Indent as level 2 list (4 spaces for markdown level 2)
                     lines.append(f"    {letter}. {choice_text} = {answer_text}")
                 else:
@@ -1531,26 +1699,12 @@ class XmlReader:
         orderings = question.get_orderings()
         for idx, ordering in enumerate(orderings, start=1):
             letter = chr(96 + idx)  # a, b, c, etc.
-            # Clean HTML from ordering text
-            ordering_text = ordering.text
-            try:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(ordering_text, 'html.parser')
-                ordering_text = soup.get_text(separator=' ', strip=True)
-            except:
-                import re
-                ordering_text = re.sub(r'\s+', ' ', ordering_text).strip()
+            # Convert HTML with base64 images to markdown
+            ordering_text = self._convert_html_with_base64_images_to_markdown(ordering.text)
             # Indent as level 2 list (4 spaces for markdown level 2)
             lines.append(f"    {letter}. {ordering_text}")
             if ordering.ord_feedback:
-                feedback_text = ordering.ord_feedback
-                try:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(feedback_text, 'html.parser')
-                    feedback_text = soup.get_text(separator=' ', strip=True)
-                except:
-                    import re
-                    feedback_text = re.sub(r'\s+', ' ', feedback_text).strip()
+                feedback_text = self._convert_html_with_base64_images_to_markdown(ordering.ord_feedback)
                 lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1565,15 +1719,8 @@ class XmlReader:
         if wr and wr.answer_key:
             # Add blank line first (double newline for hard paragraph break)
             lines.append("")
-            # Clean HTML from answer text
-            answer_text = wr.answer_key
-            try:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(answer_text, 'html.parser')
-                answer_text = soup.get_text(separator=' ', strip=True)
-            except:
-                import re
-                answer_text = re.sub(r'\s+', ' ', answer_text).strip()
+            # Convert HTML with base64 images to markdown
+            answer_text = self._convert_html_with_base64_images_to_markdown(wr.answer_key)
             # Indent with regular spaces (3 for label, 7 for answer) to mimic margin
             # Avoid 4+ leading spaces to prevent markdown list or code block detection
             lines.append(f"Correct Answer:")
