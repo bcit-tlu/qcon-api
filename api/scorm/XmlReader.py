@@ -1402,8 +1402,8 @@ class XmlReader:
         for section in sections:
             # Skip root section (is_main_content=True) - don't wrap it with #section markers
             # Only wrap non-root sections with #section and /section markers
-            if not section.is_main_content:
-                lines.append("#section")
+            # if not section.is_main_content:
+            #     lines.append("#section")
             
             # Add section title if present and should be displayed (## for markdown heading)
             if section.title and section.is_title_displayed:
@@ -1414,6 +1414,10 @@ class XmlReader:
                     section_title_display = soup.get_text(separator=' ', strip=True)
                 except:
                     section_title_display = re.sub(r'\s+', ' ', section_title_display).strip()
+                lines.append("")  # Add blank lines before #section
+                lines.append("")
+                lines.append("#section")
+                lines.append("")  # Add blank line after #section
                 lines.append(f"## {section_title_display}")
             
             # Add section text if present and should be displayed
@@ -1424,15 +1428,24 @@ class XmlReader:
             
             # Process questions in this section
             questions = section.get_questions()
-            for question in questions:
+            for idx, question in enumerate(questions):
                 question_markdown = self._format_question_to_markdown(question)
                 lines.append(question_markdown)
-                lines.append("")  # Add blank line between questions
+                
+                # Add /section marker after the last question for non-root sections
+                if not section.is_main_content and idx == len(questions) - 1:
+                    # Last question - add /section right after it
+                    lines.append("")
+                    lines.append("/section")
+                    lines.append("")
+                elif idx < len(questions) - 1:
+                    # Not the last question - add blank line between questions
+                    lines.append("")
             
-            # Close section marker for non-root sections
-            if not section.is_main_content:
+            # If section has no questions, still add /section for non-root sections
+            if not section.is_main_content and len(questions) == 0:
                 lines.append("/section")
-                lines.append("")  # Add blank line after section
+                lines.append("")
         
         # Join with newlines and ensure proper formatting
         result = "\n".join(lines)
