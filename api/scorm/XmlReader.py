@@ -10,6 +10,7 @@ from django.conf import settings
 from bs4 import BeautifulSoup
 import re
 import base64
+import html
 from api.models import (
     QuestionLibrary, Section, Question,
     MultipleChoice, MultipleChoiceAnswer,
@@ -294,6 +295,7 @@ class XmlReader:
         Extract text content from material element, handling CDATA.
         Automatically cleans CDATA whitespace and HTML tags.
         Converts SCORM image file paths to base64 data URIs.
+        Decodes HTML entities (including numeric entities for emojis and symbols).
         """
         text_parts = []
         
@@ -309,8 +311,10 @@ class XmlReader:
                     # Also check for CDATA in tail
                     if mattext.tail:
                         raw_text += mattext.tail
+                    # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                    decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    cleaned_text = self._clean_cdata_text(raw_text)
+                    cleaned_text = self._clean_cdata_text(decoded_text)
                     # Convert SCORM image file paths to base64
                     cleaned_text = self._convert_scorm_images_to_base64(cleaned_text)
                     text_parts.append(cleaned_text)
@@ -322,6 +326,7 @@ class XmlReader:
         Extract question text from presentation element.
         Automatically cleans CDATA whitespace and HTML tags.
         Converts SCORM image file paths to base64 data URIs.
+        Decodes HTML entities (including numeric entities for emojis and symbols).
         """
         text_parts = []
         
@@ -335,8 +340,10 @@ class XmlReader:
                     raw_text = mattext.text if mattext.text else ''
                     if mattext.tail:
                         raw_text += mattext.tail
+                    # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                    decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    cleaned_text = self._clean_cdata_text(raw_text)
+                    cleaned_text = self._clean_cdata_text(decoded_text)
                     # Convert SCORM image file paths to base64
                     cleaned_text = self._convert_scorm_images_to_base64(cleaned_text)
                     text_parts.append(cleaned_text)
@@ -355,14 +362,17 @@ class XmlReader:
         Extract text from feedback element.
         Automatically cleans CDATA whitespace while preserving HTML tags.
         Converts SCORM image file paths to base64 data URIs.
+        Decodes HTML entities (including numeric entities for emojis and symbols).
         """
         material = feedback_el.find('material')
         if material is not None:
             mattext = material.find('mattext')
             if mattext is not None:
                 raw_text = mattext.text if mattext.text else ''
+                # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                decoded_text = html.unescape(raw_text)
                 # Clean CDATA whitespace while preserving HTML tags
-                cleaned_text = self._clean_cdata_text(raw_text)
+                cleaned_text = self._clean_cdata_text(decoded_text)
                 # Convert SCORM image file paths to base64
                 return self._convert_scorm_images_to_base64(cleaned_text)
         return None
@@ -557,6 +567,11 @@ class XmlReader:
         result = re.sub(img_pattern, preserve_img_tag, html_text)
         result = re.sub(math_pattern, preserve_math, result, flags=re.IGNORECASE)
         
+        # Replace <p> and </p> tags with newlines to preserve paragraph breaks
+        # Do this before BeautifulSoup processes it to ensure paragraph breaks are preserved
+        result = re.sub(r'</p>', '\n', result, flags=re.IGNORECASE)
+        result = re.sub(r'<p[^>]*>', '\n', result, flags=re.IGNORECASE)
+        
         # Convert remaining HTML to plain text using BeautifulSoup
         try:
             soup = BeautifulSoup(result, 'html.parser')
@@ -586,6 +601,9 @@ class XmlReader:
         
         # Normalize whitespace on each line but keep explicit newlines and math/img blocks
         text = text.replace('\r', '')
+        # Normalize multiple consecutive newlines (from paragraph breaks) to double newlines
+        # This ensures paragraphs are separated by blank lines in markdown
+        text = re.sub(r'\n{3,}', '\n\n', text)  # 3+ newlines -> 2 newlines
         normalized_lines = []
         for line in text.split('\n'):
             stripped = line.strip()
@@ -649,8 +667,10 @@ class XmlReader:
                     answer_text = ''
                     if mattext is not None:
                         raw_text = mattext.text if mattext.text else ''
+                        # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                        decoded_text = html.unescape(raw_text)
                         # Clean CDATA whitespace while preserving HTML tags
-                        answer_text = self._clean_cdata_text(raw_text)
+                        answer_text = self._clean_cdata_text(decoded_text)
                     
                     # Find weight from resprocessing
                     weight = 0.0
@@ -806,8 +826,10 @@ class XmlReader:
                 mattext = child.find('mattext')
                 text = ''
                 if mattext is not None:
-                    # Don't clean CDATA for FIB - preserve original spacing
-                    text = mattext.text if mattext.text else ''
+                    raw_text = mattext.text if mattext.text else ''
+                    # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                    # Don't clean CDATA for FIB - preserve original spacing, but decode entities
+                    text = html.unescape(raw_text)
                 
                 fib_data['fibs'].append({
                     'type': 'fibquestion',
@@ -902,8 +924,10 @@ class XmlReader:
                     answer_text = ''
                     if mattext is not None:
                         raw_text = mattext.text if mattext.text else ''
+                        # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                        decoded_text = html.unescape(raw_text)
                         # Clean CDATA whitespace while preserving HTML tags
-                        answer_text = self._clean_cdata_text(raw_text)
+                        answer_text = self._clean_cdata_text(decoded_text)
                     
                     # Determine if correct from resprocessing
                     is_correct = False
@@ -1000,8 +1024,10 @@ class XmlReader:
                 mattext = material.find('mattext')
                 if mattext is not None:
                     raw_text = mattext.text if mattext.text else ''
+                    # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                    decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    choice_text = self._clean_cdata_text(raw_text)
+                    choice_text = self._clean_cdata_text(decoded_text)
             
             # Find correct answer from resprocessing
             correct_answer_ident = None
@@ -1068,8 +1094,10 @@ class XmlReader:
             text = ''
             if mattext is not None:
                 raw_text = mattext.text if mattext.text else ''
+                # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                decoded_text = html.unescape(raw_text)
                 # Clean CDATA whitespace while preserving HTML tags
-                text = self._clean_cdata_text(raw_text)
+                text = self._clean_cdata_text(decoded_text)
             
             # Find feedback
             ord_feedback = None
@@ -1131,8 +1159,10 @@ class XmlReader:
                 mattext = initial_text_mat.find('.//mattext')
                 if mattext is not None:
                     raw_text = mattext.text if mattext.text else ''
+                    # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
+                    decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    cleaned_text = self._clean_cdata_text(raw_text)
+                    cleaned_text = self._clean_cdata_text(decoded_text)
                     wr_data['initial_text'] = cleaned_text if cleaned_text else None
         
         return wr_data
@@ -1400,28 +1430,33 @@ class XmlReader:
         # Process sections
         sections = question_library.get_sections()
         for section in sections:
-            # Skip root section (is_main_content=True) - don't wrap it with #section markers
-            # Only wrap non-root sections with #section and /section markers
-            # if not section.is_main_content:
-            #     lines.append("#section")
+            # For main content sections (is_main_content=True), skip #section markers and section title
+            # The main title is already displayed as H1 above
+            if not section.is_main_content:
+                # Add section title if present and should be displayed (## for markdown heading)
+                if section.title and section.is_title_displayed:
+                    # Clean HTML from section title for display
+                    section_title_display = section.title
+                    try:
+                        soup = BeautifulSoup(section_title_display, 'html.parser')
+                        section_title_display = soup.get_text(separator=' ', strip=True)
+                    except:
+                        section_title_display = re.sub(r'\s+', ' ', section_title_display).strip()
+                    lines.append("")
+                    lines.append("<br>")
+                    lines.append("#section")
+                    lines.append(f"## {section_title_display}")
             
-            # Add section title if present and should be displayed (## for markdown heading)
-            if section.title and section.is_title_displayed:
-                # Clean HTML from section title for display
-                section_title_display = section.title
-                try:
-                    soup = BeautifulSoup(section_title_display, 'html.parser')
-                    section_title_display = soup.get_text(separator=' ', strip=True)
-                except:
-                    section_title_display = re.sub(r'\s+', ' ', section_title_display).strip()
-                lines.append("")  # Add blank lines before #section
-                lines.append("")
-                lines.append("#section")
-                lines.append("")  # Add blank line after #section
-                lines.append(f"## {section_title_display}")
+            # Add section text if present
+            # For main content sections: only display if is_text_displayed is true
+            # For non-main-content sections: always display if text exists (regardless of is_text_displayed)
+            should_display_text = False
+            if section.is_main_content:
+                should_display_text = section.text and section.is_text_displayed
+            else:
+                should_display_text = bool(section.text)  # Display if text exists
             
-            # Add section text if present and should be displayed
-            if section.text and section.is_text_displayed:
+            if should_display_text:
                 # Convert HTML with base64 images to markdown
                 section_text = self._convert_html_with_base64_images_to_markdown(section.text)
                 lines.append(section_text)
@@ -1432,20 +1467,18 @@ class XmlReader:
                 question_markdown = self._format_question_to_markdown(question)
                 lines.append(question_markdown)
                 
-                # Add /section marker after the last question for non-root sections
+                # Add /section marker after the last question for non-main-content sections
                 if not section.is_main_content and idx == len(questions) - 1:
                     # Last question - add /section right after it
                     lines.append("")
+                    lines.append("<br>")
                     lines.append("/section")
-                    lines.append("")
-                elif idx < len(questions) - 1:
-                    # Not the last question - add blank line between questions
-                    lines.append("")
             
-            # If section has no questions, still add /section for non-root sections
+            # If section has no questions, still add /section for non-main-content sections
             if not section.is_main_content and len(questions) == 0:
-                lines.append("/section")
                 lines.append("")
+                lines.append("<br>")
+                lines.append("/section")
         
         # Join with newlines and ensure proper formatting
         result = "\n".join(lines)
@@ -1464,6 +1497,8 @@ class XmlReader:
         # Question header: Type, Title, Points (each on separate line)
         # Each header on its own line
         if question.questiontype:
+            lines.append("")
+            lines.append("<br>")
             lines.append(f"Type: {question.questiontype}")
         if question.title:
             lines.append(f"Title: {question.title}")
