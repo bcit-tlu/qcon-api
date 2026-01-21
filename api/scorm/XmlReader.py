@@ -1426,6 +1426,11 @@ class XmlReader:
                 main_title = re.sub(r'\s+', ' ', main_title).strip()
             lines.append(f"# {main_title}")
             lines.append("")  # Add blank line after title
+
+        # Add root-level text (main_text) if present
+        if getattr(question_library, "main_text", None):
+            lines.append(question_library.main_text)
+            lines.append("")
         
         # Process sections
         sections = question_library.get_sections()
@@ -1494,7 +1499,7 @@ class XmlReader:
         """
         lines = []
         
-        # Question header: Type, Title, Points (each on separate line)
+        # Question header: Type, Title, Points, Randomize (each on separate line)
         # Each header on its own line
         if question.questiontype:
             lines.append("")
@@ -1506,6 +1511,18 @@ class XmlReader:
             # Normalize points: remove trailing zeros and decimal if not needed (e.g., 1.0000 -> 1, 1.5 -> 1.5)
             normalized_points = str(float(question.points)).rstrip('0').rstrip('.')
             lines.append(f"Points: {normalized_points}")
+        # Add Randomize if set on MC/MS question types (mirrors docx -> json randomize parsing)
+        randomize_value = None
+        if question.questiontype == 'MC':
+            mc = question.get_multiple_choice()
+            if mc and mc.randomize is not None:
+                randomize_value = mc.randomize
+        elif question.questiontype == 'MS':
+            ms = question.get_multiple_select()
+            if ms and ms.randomize is not None:
+                randomize_value = ms.randomize
+        if randomize_value is True:
+            lines.append("Randomize: yes")
         
         # Add question text (HTML format from SCORM, convert to markdown preserving base64 images)
         # Prefix with question number if available (e.g., "1. Question text")

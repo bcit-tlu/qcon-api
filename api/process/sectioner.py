@@ -60,6 +60,9 @@ def run_sectioner(questionlibrary):
                 sectionobject.raw_content = maincontent.text
                 sectionobject.is_main_content = True
                 sectionobject.title = questionlibrary.main_title
+                if questionlibrary.main_text:
+                    sectionobject.text = markdown_to_html(questionlibrary.main_text)
+                    sectionobject.is_text_displayed = True
 
             sectiontext = section.find('sectiontext')
             if sectiontext is not None:

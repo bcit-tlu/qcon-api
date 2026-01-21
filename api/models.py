@@ -49,6 +49,7 @@ class QuestionLibrary(models.Model):
     image_path = models.FilePathField(path=None, match=None, recursive=False, max_length=None)
     shuffle = models.BooleanField(blank=True, null=True)
     main_title = models.TextField(blank=True, null=True)
+    main_text = models.TextField(blank=True, null=True)
     filtered_main_title = models.TextField(blank=True, null=True)
     end_answers_raw = models.TextField(blank=True, null=True)
     formatter_error = models.TextField(blank=True, null=True)
