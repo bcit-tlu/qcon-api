@@ -5,6 +5,7 @@
 from rest_framework import serializers
 from .models import Matching, MatchingAnswer, MatchingChoice, Ordering, QuestionLibrary, Section, Question, MultipleChoice, MultipleChoiceAnswer, TrueFalse, Fib, MultipleSelect, MultipleSelectAnswer, WrittenResponse
 from django.conf import settings
+from .process.process_helper import trim_md_to_html
 
 
 def validate_docx_file(value):
@@ -279,11 +280,17 @@ class SectionSerializer(serializers.ModelSerializer):
 class JsonResponseSerializer(serializers.ModelSerializer):
     # sections = SectionSerializer(many=True, read_only=True)
     sections = serializers.SerializerMethodField()
+    main_text = serializers.SerializerMethodField()
 
     def get_sections(self, questionlibrary):
         section_queryset = questionlibrary.get_sections()
         serializer = SectionSerializer(instance=section_queryset, many=True)
         return serializer.data
+
+    def get_main_text(self, questionlibrary):
+        if not questionlibrary.main_text:
+            return questionlibrary.main_text
+        return trim_md_to_html(questionlibrary.main_text)
     class Meta:
         model = QuestionLibrary
         fields = ['main_title', 'main_text', 'randomize_answer', 'enumeration', 'media_folder', 'sections']
@@ -340,10 +347,17 @@ class SectionPackageSerializer(serializers.ModelSerializer):
 
 class QuestionLibraryPackageSerializer(serializers.ModelSerializer):
     sections = SectionPackageSerializer(many=True, allow_null=True)
+    main_text = serializers.CharField(required=False, allow_null=True)
 
     class Meta:
         model = QuestionLibrary
         fields = ['main_title', 'main_text', 'randomize_answer', 'enumeration', 'media_folder', 'formatter_output', 'sectioner_output', 'sections']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get('main_text'):
+            data['main_text'] = trim_md_to_html(data['main_text'])
+        return data
 
     def create(self, validated_data):
         sections_data = validated_data.pop('sections')

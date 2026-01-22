@@ -35,7 +35,7 @@ class XmlWriter:
         if question_library.shuffle is True:
             self.create_section_shuffle(base_section_el)
 
-        self.create_presentation_material(base_section_el, "") # we currently not catching any base section text and it's ignored in ANTLR
+        self.create_presentation_material(base_section_el, question_library.main_text) # include root-level text when present
         
         sec_proc = ET.SubElement(base_section_el, "sectionproc_extension")
         sec_proc_dis_name = ET.SubElement(sec_proc, "d2l_2p0:display_section_name")

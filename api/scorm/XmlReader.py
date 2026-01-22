@@ -177,7 +177,7 @@ class XmlReader:
         # Parse presentation material (section text)
         presentation_material = section_el.find('presentation_material')
         if presentation_material is not None:
-            text = self._extract_text_from_material(presentation_material)
+            text = self._extract_material_text(presentation_material)
             section_data['text'] = text
         
         # Parse sectionproc_extension
@@ -254,14 +254,14 @@ class XmlReader:
         # Parse hint
         hint_el = item_el.find('hint')
         if hint_el is not None:
-            question_data['hint'] = self._extract_text_from_hint(hint_el)
+            question_data['hint'] = self._extract_hint_text(hint_el)
         
         # Parse general feedback
         feedback_els = item_el.findall('itemfeedback')
         for feedback_el in feedback_els:
             # General feedback typically has ident matching the question label
             if feedback_el.get('ident') == question_data['label']:
-                question_data['feedback'] = self._extract_text_from_feedback(feedback_el)
+                question_data['feedback'] = self._extract_feedback_text(feedback_el)
         
         # Parse question-specific data based on type
         question_type = question_data['question_type']
@@ -290,7 +290,7 @@ class XmlReader:
         
         return question_data
     
-    def _extract_text_from_material(self, material_el):
+    def _extract_material_text(self, material_el):
         """
         Extract text content from material element, handling CDATA.
         Automatically cleans CDATA whitespace and HTML tags.
@@ -314,9 +314,9 @@ class XmlReader:
                     # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                     decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    cleaned_text = self._clean_cdata_text(decoded_text)
+                    cleaned_text = self._clean_cdata(decoded_text)
                     # Convert SCORM image file paths to base64
-                    cleaned_text = self._convert_scorm_images_to_base64(cleaned_text)
+                    cleaned_text = self._inline_scorm_images(cleaned_text)
                     text_parts.append(cleaned_text)
         
         return ''.join(text_parts)
@@ -343,21 +343,21 @@ class XmlReader:
                     # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                     decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    cleaned_text = self._clean_cdata_text(decoded_text)
+                    cleaned_text = self._clean_cdata(decoded_text)
                     # Convert SCORM image file paths to base64
-                    cleaned_text = self._convert_scorm_images_to_base64(cleaned_text)
+                    cleaned_text = self._inline_scorm_images(cleaned_text)
                     text_parts.append(cleaned_text)
         
         return ''.join(text_parts)
     
-    def _extract_text_from_hint(self, hint_el):
+    def _extract_hint_text(self, hint_el):
         """Extract text from hint element."""
         hintmaterial = hint_el.find('hintmaterial')
         if hintmaterial is not None:
-            return self._extract_text_from_material(hintmaterial)
+            return self._extract_material_text(hintmaterial)
         return None
     
-    def _extract_text_from_feedback(self, feedback_el):
+    def _extract_feedback_text(self, feedback_el):
         """
         Extract text from feedback element.
         Automatically cleans CDATA whitespace while preserving HTML tags.
@@ -372,12 +372,12 @@ class XmlReader:
                 # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                 decoded_text = html.unescape(raw_text)
                 # Clean CDATA whitespace while preserving HTML tags
-                cleaned_text = self._clean_cdata_text(decoded_text)
+                cleaned_text = self._clean_cdata(decoded_text)
                 # Convert SCORM image file paths to base64
-                return self._convert_scorm_images_to_base64(cleaned_text)
+                return self._inline_scorm_images(cleaned_text)
         return None
     
-    def _clean_cdata_text(self, text):
+    def _clean_cdata(self, text):
         """
         Clean text extracted from CDATA sections in SCORM XML.
         
@@ -413,7 +413,7 @@ class XmlReader:
             cleaned = re.sub(r'\s+', ' ', text).strip()
             return cleaned
     
-    def _convert_scorm_images_to_base64(self, html_text):
+    def _inline_scorm_images(self, html_text):
         """
         Convert SCORM image file paths to base64 data URIs in HTML text.
         
@@ -510,7 +510,7 @@ class XmlReader:
         result = re.sub(img_pattern, replace_image, html_text)
         return result
     
-    def _convert_html_with_base64_images_to_markdown(self, html_text):
+    def _html_to_markdown(self, html_text):
         """
         Convert HTML text with base64 images to markdown format.
         
@@ -670,7 +670,7 @@ class XmlReader:
                         # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                         decoded_text = html.unescape(raw_text)
                         # Clean CDATA whitespace while preserving HTML tags
-                        answer_text = self._clean_cdata_text(decoded_text)
+                        answer_text = self._clean_cdata(decoded_text)
                     
                     # Find weight from resprocessing
                     weight = 0.0
@@ -696,7 +696,7 @@ class XmlReader:
                                             feedback_ident = displayfeedback.get('linkrefid', '')
                                             feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
                                             if feedback_el is not None:
-                                                answer_feedback = self._extract_text_from_feedback(feedback_el)
+                                                answer_feedback = self._extract_feedback_text(feedback_el)
                     
                     mc_data['answers'].append({
                         'answer': answer_text,
@@ -781,7 +781,7 @@ class XmlReader:
                                     feedback_ident = displayfeedback.get('linkrefid', '')
                                     feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
                                     if feedback_el is not None:
-                                        tf_data['true_feedback'] = self._extract_text_from_feedback(feedback_el)
+                                        tf_data['true_feedback'] = self._extract_feedback_text(feedback_el)
                             
                             elif false_ident and answer_ident == false_ident:
                                 setvar = respcondition.find('setvar')
@@ -797,7 +797,7 @@ class XmlReader:
                                     feedback_ident = displayfeedback.get('linkrefid', '')
                                     feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
                                     if feedback_el is not None:
-                                        tf_data['false_feedback'] = self._extract_text_from_feedback(feedback_el)
+                                        tf_data['false_feedback'] = self._extract_feedback_text(feedback_el)
         
         return tf_data
     
@@ -927,7 +927,7 @@ class XmlReader:
                         # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                         decoded_text = html.unescape(raw_text)
                         # Clean CDATA whitespace while preserving HTML tags
-                        answer_text = self._clean_cdata_text(decoded_text)
+                        answer_text = self._clean_cdata(decoded_text)
                     
                     # Determine if correct from resprocessing
                     is_correct = False
@@ -952,7 +952,7 @@ class XmlReader:
                                             feedback_ident = displayfeedback.get('linkrefid', '')
                                             feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
                                             if feedback_el is not None:
-                                                answer_feedback = self._extract_text_from_feedback(feedback_el)
+                                                answer_feedback = self._extract_feedback_text(feedback_el)
                     
                     ms_data['answers'].append({
                         'answer': answer_text,
@@ -1009,7 +1009,7 @@ class XmlReader:
                     if mattext is not None:
                         raw_text = mattext.text if mattext.text else ''
                         # Clean CDATA whitespace while preserving HTML tags
-                        answer_text = self._clean_cdata_text(raw_text)
+                        answer_text = self._clean_cdata(raw_text)
                         if answer_text and answer_ident not in matching_answers:
                             matching_answers[answer_ident] = answer_text
         
@@ -1027,7 +1027,7 @@ class XmlReader:
                     # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                     decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    choice_text = self._clean_cdata_text(decoded_text)
+                    choice_text = self._clean_cdata(decoded_text)
             
             # Find correct answer from resprocessing
             correct_answer_ident = None
@@ -1097,7 +1097,7 @@ class XmlReader:
                 # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                 decoded_text = html.unescape(raw_text)
                 # Clean CDATA whitespace while preserving HTML tags
-                text = self._clean_cdata_text(decoded_text)
+                text = self._clean_cdata(decoded_text)
             
             # Find feedback
             ord_feedback = None
@@ -1105,7 +1105,7 @@ class XmlReader:
             feedback_ident = question_ident_feedback + str(order_index)
             feedback_el = item_el.find(f".//itemfeedback[@ident='{feedback_ident}']")
             if feedback_el is not None:
-                ord_feedback = self._extract_text_from_feedback(feedback_el)
+                ord_feedback = self._extract_feedback_text(feedback_el)
             
             ord_data['items'].append({
                 'text': text,
@@ -1149,7 +1149,7 @@ class XmlReader:
                 if mattext is not None:
                     raw_text = mattext.text if mattext.text else ''
                     # Clean CDATA whitespace while preserving HTML tags
-                    wr_data['answer_key'] = self._clean_cdata_text(raw_text)
+                    wr_data['answer_key'] = self._clean_cdata(raw_text)
         
         # Parse initial_text (if present)
         initial_text_el = item_el.find('initial_text')
@@ -1162,7 +1162,7 @@ class XmlReader:
                     # Decode HTML entities (handles &amp;, &lt;, &gt;, &#129315;, etc.)
                     decoded_text = html.unescape(raw_text)
                     # Clean CDATA whitespace while preserving HTML tags
-                    cleaned_text = self._clean_cdata_text(decoded_text)
+                    cleaned_text = self._clean_cdata(decoded_text)
                     wr_data['initial_text'] = cleaned_text if cleaned_text else None
         
         return wr_data
@@ -1429,7 +1429,9 @@ class XmlReader:
 
         # Add root-level text (main_text) if present
         if getattr(question_library, "main_text", None):
-            lines.append(question_library.main_text)
+            # Convert HTML (including embedded images) to markdown for SCORM output
+            main_text = self._html_to_markdown(question_library.main_text)
+            lines.append(main_text)
             lines.append("")
         
         # Process sections
@@ -1463,7 +1465,7 @@ class XmlReader:
             
             if should_display_text:
                 # Convert HTML with base64 images to markdown
-                section_text = self._convert_html_with_base64_images_to_markdown(section.text)
+                section_text = self._html_to_markdown(section.text)
                 lines.append(section_text)
             
             # Process questions in this section
@@ -1529,7 +1531,7 @@ class XmlReader:
         # Note: For FIB questions, skip displaying question.text here since FIB formatting includes all text parts
         if question.text and question.questiontype != 'FIB':
             # Convert HTML with base64 images to markdown
-            question_text = self._convert_html_with_base64_images_to_markdown(question.text)
+            question_text = self._html_to_markdown(question.text)
             
             # Extract plain text for numbering (remove markdown formatting)
             plain_text = re.sub(r'!\[.*?\]\([^)]+\)', '', question_text)  # Remove image markdown
@@ -1591,12 +1593,12 @@ class XmlReader:
         
         # Add hint if present (format: @Hint: or @HINT:)
         if question.hint:
-            hint_text = self._convert_html_with_base64_images_to_markdown(question.hint)
+            hint_text = self._html_to_markdown(question.hint)
             lines.append(f"@Hint: {hint_text}")
         
         # Add feedback if present (format: @Feedback: or @FEEDBACK:)
         if question.feedback:
-            feedback_text = self._convert_html_with_base64_images_to_markdown(question.feedback)
+            feedback_text = self._html_to_markdown(question.feedback)
             lines.append(f"@Feedback: {feedback_text}")
         
         # Use double newlines so each logical line becomes a paragraph (hard breaks, not soft)
@@ -1616,11 +1618,11 @@ class XmlReader:
                 # Correct answer has * before the letter (weight > 0)
                 marker = "*" if answer.weight and answer.weight > 0 else ""
                 # Convert HTML with base64 images to markdown
-                answer_text = self._convert_html_with_base64_images_to_markdown(answer.answer)
+                answer_text = self._html_to_markdown(answer.answer)
                 # Indent as level 2 list (4 spaces for markdown level 2)
                 lines.append(f"    {letter}. {marker}{answer_text}")
                 if answer.answer_feedback:
-                    feedback_text = self._convert_html_with_base64_images_to_markdown(answer.answer_feedback)
+                    feedback_text = self._html_to_markdown(answer.answer_feedback)
                     lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1637,11 +1639,11 @@ class XmlReader:
             # Indent as level 2 list (4 spaces for markdown level 2)
             lines.append(f"    a. {true_marker}True")
             if tf.true_feedback:
-                feedback_text = self._convert_html_with_base64_images_to_markdown(tf.true_feedback)
+                feedback_text = self._html_to_markdown(tf.true_feedback)
                 lines.append(f"    @Feedback: {feedback_text}")
             lines.append(f"    b. {false_marker}False")
             if tf.false_feedback:
-                feedback_text = self._convert_html_with_base64_images_to_markdown(tf.false_feedback)
+                feedback_text = self._html_to_markdown(tf.false_feedback)
                 lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1659,7 +1661,7 @@ class XmlReader:
             if fib.type == 'fibquestion':
                 if fib.text:
                     # Convert HTML with base64 images to markdown, preserving spacing
-                    cleaned_text = self._convert_html_with_base64_images_to_markdown(fib.text)
+                    cleaned_text = self._html_to_markdown(fib.text)
                     current_text += cleaned_text
             elif fib.type == 'fibanswer':
                 # Insert answer in brackets [answer] where the blank should be
@@ -1684,11 +1686,11 @@ class XmlReader:
                 letter = chr(96 + idx)  # a, b, c, etc.
                 marker = "*" if answer.is_correct else ""
                 # Convert HTML with base64 images to markdown
-                answer_text = self._convert_html_with_base64_images_to_markdown(answer.answer)
+                answer_text = self._html_to_markdown(answer.answer)
                 # Indent as level 2 list (4 spaces for markdown level 2)
                 lines.append(f"    {letter}. {marker}{answer_text}")
                 if answer.answer_feedback:
-                    feedback_text = self._convert_html_with_base64_images_to_markdown(answer.answer_feedback)
+                    feedback_text = self._html_to_markdown(answer.answer_feedback)
                     lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1706,14 +1708,14 @@ class XmlReader:
                 letter = chr(96 + idx)  # a, b, c, etc.
                 
                 # Convert HTML with base64 images to markdown (preserves inline styling and images)
-                choice_text = self._convert_html_with_base64_images_to_markdown(choice.choice_text)
+                choice_text = self._html_to_markdown(choice.choice_text)
                 
                 # Use the related manager matching_answers (from ForeignKey in MatchingAnswer)
                 answers = choice.matching_answers.all()
                 if answers:
                     # Get the first matching answer (typically there's one per choice)
                     answer = answers[0]
-                    answer_text = self._convert_html_with_base64_images_to_markdown(answer.answer_text)
+                    answer_text = self._html_to_markdown(answer.answer_text)
                     # Indent as level 2 list (4 spaces for markdown level 2)
                     lines.append(f"    {letter}. {choice_text} = {answer_text}")
                 else:
@@ -1721,7 +1723,7 @@ class XmlReader:
                     lines.append(f"    {letter}. {choice_text} =")
         return "\n".join(lines)
     
-    def _remove_block_tags_preserve_inline(self, html_text):
+    def _strip_block_tags(self, html_text):
         """
         Remove block-level HTML tags (p, div, etc.) but preserve inline styling tags (strong, em, b, i, etc.).
         This allows formatting like bold/italic to be preserved while removing tags that cause line breaks.
@@ -1765,11 +1767,11 @@ class XmlReader:
         for idx, ordering in enumerate(orderings, start=1):
             letter = chr(96 + idx)  # a, b, c, etc.
             # Convert HTML with base64 images to markdown
-            ordering_text = self._convert_html_with_base64_images_to_markdown(ordering.text)
+            ordering_text = self._html_to_markdown(ordering.text)
             # Indent as level 2 list (4 spaces for markdown level 2)
             lines.append(f"    {letter}. {ordering_text}")
             if ordering.ord_feedback:
-                feedback_text = self._convert_html_with_base64_images_to_markdown(ordering.ord_feedback)
+                feedback_text = self._html_to_markdown(ordering.ord_feedback)
                 lines.append(f"    @Feedback: {feedback_text}")
         return "\n".join(lines)
     
@@ -1785,7 +1787,7 @@ class XmlReader:
             # Add blank line first (double newline for hard paragraph break)
             lines.append("")
             # Convert HTML with base64 images to markdown
-            answer_text = self._convert_html_with_base64_images_to_markdown(wr.answer_key)
+            answer_text = self._html_to_markdown(wr.answer_key)
             # Indent with regular spaces (3 for label, 7 for answer) to mimic margin
             # Avoid 4+ leading spaces to prevent markdown list or code block detection
             lines.append(f"Correct Answer:")
