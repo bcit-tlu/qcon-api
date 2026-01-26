@@ -12,14 +12,14 @@ from .logging.WarningTypes import (RespondusTypeEWarning, RespondusTypeMRWarning
 
 from .logging.logging_adapter import FilenameLoggingAdapter
 from .models import EndAnswer, Question, QuestionLibrary
-from .process.process_helper import (add_error_message, add_warning_message, html_to_plain, markdown_to_plain, markdown_to_html, trim_md_to_html, trim_text)
-from .process.questionbuilder.fib import build_endanswer_FIB, build_inline_FIB
-from .process.questionbuilder.matching import (build_endanswer_MAT, build_inline_MAT)
-from .process.questionbuilder.multiplechoice import (build_endanswer_MC, build_inline_MC)
-from .process.questionbuilder.multipleselect import (build_endanswer_MS, build_inline_MS)
-from .process.questionbuilder.ordering import (build_endanswer_ORD, build_inline_ORD)
-from .process.questionbuilder.truefalse import (build_endanswer_TF, build_inline_TF)
-from .process.questionbuilder.writtenresponse import (build_endanswer_WR_with_list, build_inline_WR_with_keyword, build_inline_WR_with_list)
+from .formats.docx.process_helper import (add_error_message, add_warning_message, html_to_plain, markdown_to_plain, markdown_to_html, trim_md_to_html, trim_text)
+from .questions.model_builders.fib import build_endanswer_FIB, build_inline_FIB
+from .questions.model_builders.matching import (build_endanswer_MAT, build_inline_MAT)
+from .questions.model_builders.multiplechoice import (build_endanswer_MC, build_inline_MC)
+from .questions.model_builders.multipleselect import (build_endanswer_MS, build_inline_MS)
+from .questions.model_builders.ordering import (build_endanswer_ORD, build_inline_ORD)
+from .questions.model_builders.truefalse import (build_endanswer_TF, build_inline_TF)
+from .questions.model_builders.writtenresponse import (build_endanswer_WR_with_list, build_inline_WR_with_keyword, build_inline_WR_with_list)
 
 logger = logging.getLogger(__name__)
 loggercelery = get_task_logger(__name__)

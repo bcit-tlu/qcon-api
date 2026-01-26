@@ -7,8 +7,8 @@ from . import views
 from django.conf import settings
 
 urlpatterns = [
-    path('convert', views.WordToJson.as_view(), name='WordToJson'),
-    path('package', views.JsonToScorm.as_view(), name='JsonToScorm'),
+    path('docx-to-json', views.DocxToJson.as_view(), name='DocxToJson'),
+    path('json-to-scorm', views.JsonToScorm.as_view(), name='JsonToScorm'),
     path('scorm-to-json', views.ScormToJson.as_view(), name='ScormToJson'),
     path('json-to-docx', views.JsonToDocx.as_view(), name='JsonToDocx'),
 ]

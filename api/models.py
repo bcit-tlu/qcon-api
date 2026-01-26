@@ -6,8 +6,9 @@ from django.db import models
 
 # import pypandoc
 from datetime import datetime
-from .scorm.XmlWriter import XmlWriter
-from .scorm.manifest import ManifestEntity, ManifestResourceEntity
+from .formats.scorm.scorm_writer import ScormWriter
+from .formats.scorm.manifest_builder import build_manifest
+from .formats.scorm.manifest import ManifestEntity, ManifestResourceEntity
 
 from xml.dom.minidom import parseString
 import xml.etree.cElementTree as ET
@@ -28,6 +29,7 @@ from django.dispatch import receiver
 
 
 import logging
+import traceback
 newlogger = logging.getLogger(__name__)
 from .logging.logging_adapter import FilenameLoggingAdapter
 
@@ -110,11 +112,11 @@ class QuestionLibrary(models.Model):
         logger = FilenameLoggingAdapter(newlogger, {'filename': str(self.id)})
         try:
             ql_obj = QuestionLibrary.objects.filter(id=self.id).first()
-            parsed_xml = XmlWriter(ql_obj)
+            parsed_xml = ScormWriter(ql_obj)
             manifest_entity = ManifestEntity()
             manifest_resource_entity = ManifestResourceEntity('res_question_library', 'webcontent', 'd2lquestionlibrary', 'questiondb.xml', 'Question Library')
             manifest_entity.add_resource(manifest_resource_entity)
-            manifest = parsed_xml.create_manifest(manifest_entity, self.folder_path)
+            manifest = build_manifest(manifest_entity)
             parsed_imsmanifest = ET.tostring(manifest.getroot(), encoding='utf-8', xml_declaration=True).decode()
             parsed_imsmanifest = parseString(parsed_imsmanifest)
             parsed_imsmanifest = parsed_imsmanifest.toprettyxml(indent="\t")
@@ -122,18 +124,28 @@ class QuestionLibrary(models.Model):
             self.save()
             logger.info("imsmanifest String Created")
         except Exception as e:
-            logger.error("imsmanifest String Failed")
-            self.error = "imsmanifest String Failed"
+            logger.error(f"imsmanifest String Failed: {e}")
+            self.error = f"imsmanifest String Failed: {e}\n{traceback.format_exc()}"
             self.save()
+            return
 
         try:
+            if "parsed_xml" not in locals():
+                raise RuntimeError("ScormWriter failed; questiondb_string not generated.")
             questiondb_string = parsed_xml.questiondb_string
             media_folder = self.media_folder if self.media_folder != None else f'./assessment-assets/{self.filtered_main_title}/'
             img_elements = re.findall(r"\<img.*?\>", questiondb_string, re.MULTILINE)
 
             for idx, img in enumerate(img_elements):
                 img_src = re.findall(r"src=\"(.*?)\"", img, re.MULTILINE)
+                if not img_src:
+                    continue
+                if ";base64," not in img_src[0]:
+                    # Skip non-base64 images (external paths or placeholders)
+                    continue
                 base64_img = img_src[0].split(';base64,')
+                if len(base64_img) < 2:
+                    continue
                 img_string = base64_img[1]
                 img_ext = base64_img[0].split("/")[1]
                 image_data = base64.b64decode(img_string)
@@ -162,10 +174,17 @@ class QuestionLibrary(models.Model):
             logger.info("QuestionDB String Created")
 
         except Exception as e:
-            logger.error("QuestionDB String Failed")
-
-            self.error = "QuestionDB String Failed"
+            logger.error(f"QuestionDB String Failed: {e}")
+            self.error = f"QuestionDB String Failed: {e}\n{traceback.format_exc()}"
             self.save()
+            return
+
+        if not self.questiondb_string:
+            if not self.error:
+                self.error = "XML files Failed: questiondb_string is empty or missing."
+                self.save()
+            logger.error("XML files Failed: questiondb_string is empty or missing.")
+            return
 
         try:
             questiondb_file = ContentFile(self.questiondb_string, name="questiondb.xml")
@@ -176,8 +195,8 @@ class QuestionLibrary(models.Model):
             # print(datetime.now().strftime("%H:%M:%S"), "imsmanifest.xml and questiondb.xml created!")
 
         except Exception as e:
-            logger.error("XML files Failed")
-            self.error = "XML files Failed"
+            logger.error(f"XML files Failed: {e}")
+            self.error = f"XML files Failed: {e}\n{traceback.format_exc()}"
             self.save()
 
     def zip_files(self):
@@ -197,9 +216,8 @@ class QuestionLibrary(models.Model):
             logger.info("ZIP file Created")
 
         except Exception as e:
-            logger.error("ZIP file Failed")
-
-            self.error = "ZIP file Failed"
+            logger.error(f"ZIP file Failed: {e}")
+            self.error = f"ZIP file Failed: {e}"
             self.save()
 
     def create_zip_file_package(self):
@@ -213,8 +231,8 @@ class QuestionLibrary(models.Model):
             self.save()
             logger.info("ZIP file with JSON package Created")
         except Exception as e:
-            logger.error("ZIP file with JSON package Failed")
-            self.error = "ZIP file Failed"
+            logger.error(f"ZIP file with JSON package Failed: {e}")
+            self.error = f"ZIP file Failed: {e}"
             self.save()
 
     def cleanup(self):

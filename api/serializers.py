@@ -5,7 +5,7 @@
 from rest_framework import serializers
 from .models import Matching, MatchingAnswer, MatchingChoice, Ordering, QuestionLibrary, Section, Question, MultipleChoice, MultipleChoiceAnswer, TrueFalse, Fib, MultipleSelect, MultipleSelectAnswer, WrittenResponse
 from django.conf import settings
-from .process.process_helper import trim_md_to_html
+from .formats.docx.process_helper import trim_md_to_html
 
 
 def validate_docx_file(value):
@@ -53,7 +53,7 @@ def count_errors(questionlibrary):
     questionlibrary.save()
 
 
-class WordToJsonSerializer(serializers.Serializer):
+class DocxToJsonSerializer(serializers.Serializer):
 
     temp_file = serializers.FileField(validators=[validate_docx_file], max_length=100, allow_empty_file=False, use_url=True)
 
@@ -72,8 +72,6 @@ class WordToJsonSerializer(serializers.Serializer):
         newconversion.create_directory()
         newconversion.save()
 
-        newconversion.create_pandocstring()
-        newconversion.save()
         return newconversion
 
     def update(self, instance, validated_data):
@@ -83,7 +81,7 @@ class WordToJsonSerializer(serializers.Serializer):
 
 
 class ScormToJsonSerializer(serializers.Serializer):
-    """Serializer for SCORM ZIP file upload to convert to JSON (mirrors WordToJsonSerializer)."""
+    """Serializer for SCORM ZIP file upload to convert to JSON (mirrors DocxToJsonSerializer)."""
     scorm_file = serializers.FileField(validators=[validate_zip_file], max_length=100, allow_empty_file=False, use_url=True)
 
     def create(self, validated_data):
@@ -347,7 +345,7 @@ class SectionPackageSerializer(serializers.ModelSerializer):
 
 class QuestionLibraryPackageSerializer(serializers.ModelSerializer):
     sections = SectionPackageSerializer(many=True, allow_null=True)
-    main_text = serializers.CharField(required=False, allow_null=True)
+    main_text = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
     class Meta:
         model = QuestionLibrary
