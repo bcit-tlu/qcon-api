@@ -1,5 +1,6 @@
 from django.apps import AppConfig
 from django.conf import settings
+from django.db import connection
 import sys
 import logging
 logger = logging.getLogger(__name__)
@@ -17,6 +18,18 @@ class ApiV3Config(AppConfig):
                 logger.warning("qconapi has started in Dev Mode")
             else:
                 logger.info("qconapi has started")
+
+            # Ensure database connection is ready before accessing the database
+            # This prevents the RuntimeWarning about accessing database during app initialization
+            try:
+                connection.ensure_connection()
+            except Exception:
+                # Database not ready yet, skip initialization
+                return
+            
+            # Skip database operations during migrations
+            if 'migrate' in sys.argv or 'makemigrations' in sys.argv:
+                return
 
             from django.contrib.auth.models import User        
             if not User.objects.filter(username=settings.ADMIN_USERNAME).exists():

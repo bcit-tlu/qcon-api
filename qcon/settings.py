@@ -102,7 +102,6 @@ INSTALLED_APPS = [
 
     # Local Apps
     'api',
-    'restapi'
 ]
 
  
