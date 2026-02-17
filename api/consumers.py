@@ -2,6 +2,7 @@ import json
 import time
 from channels.generic.websocket import JsonWebsocketConsumer
 from django.core.files.base import ContentFile
+from django.conf import settings
 import base64
 from os.path import normpath
 import socket
@@ -49,7 +50,10 @@ class TextConsumer(JsonWebsocketConsumer):
                 host_header = header_value.decode('latin1')
                 break
 
-        server_info = {"hostname": hostname}
+        server_info = {
+            "hostname": hostname,
+            "app_version": getattr(settings, "APP_VERSION", ""),
+        }
         if server_addr is not None:
             server_info["server"] = f"{server_addr[0]}:{server_addr[1]}"
         if host_header is not None:
