@@ -4,6 +4,7 @@ from channels.generic.websocket import JsonWebsocketConsumer
 from django.core.files.base import ContentFile
 import base64
 from os.path import normpath
+import socket
 from .models import Question, Section, QuestionLibrary, \
     Image, MultipleChoice, MultipleChoiceAnswer, TrueFalse, Fib, MultipleSelect, MultipleSelectAnswer, \
         Matching, MatchingAnswer, MatchingChoice, Ordering, WrittenResponse
@@ -38,12 +39,32 @@ from .tasks import MarkDownConversionError
 class TextConsumer(JsonWebsocketConsumer):
 
     def connect(self):
-        newlogger.info("New connection started")
+        hostname = socket.gethostname()
+        server_addr = self.scope.get('server')
+        headers = self.scope.get('headers', [])
+
+        host_header = None
+        for header_name, header_value in headers:
+            if header_name == b'host':
+                host_header = header_value.decode('latin1')
+                break
+
+        server_info = {"hostname": hostname}
+        if server_addr is not None:
+            server_info["server"] = f"{server_addr[0]}:{server_addr[1]}"
+        if host_header is not None:
+            server_info["host_header"] = host_header
+
+        newlogger.info(f"New connection started on {server_info}")
         sessionid = None
         # print(self.scope['url_route']['kwargs']['session_id'])
         # self.sessionid = self.scope['url_route']['kwargs']['session_id']
         # self.channel_layer.group_add(self.sessionid, self.channel_name)
         self.accept()
+        self.send_json({
+            "type": "server_info",
+            "server": server_info,
+        })
 
     def disconnect(self, close_code):
         self.close()
