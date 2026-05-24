@@ -46,9 +46,9 @@ jobs:
         id: highest
         if: steps.parse.outputs.match == 'true'
         shell: bash
+        env:
+          VERSION: ${{ steps.parse.outputs.version }}
         run: |
-          VERSION=${{ steps.parse.outputs.version }}
-
           # List all stable (non-prerelease) tags, strip prefix, sort by
           # semver, take the highest.
           HIGHEST=$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" \
@@ -112,19 +112,20 @@ jobs:
       - name: Retag (no pull)
         id: retag
         if: steps.parse.outputs.match == 'true'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/qcon-api
+          SHA: ${{ steps.sha.outputs.sha }}
+          VERSION: ${{ steps.parse.outputs.version }}
+          IS_HIGHEST: ${{ steps.highest.outputs.is_highest }}
         run: |
-          IMAGE=${{ env.REGISTRY }}/${{ github.repository }}/qcon-api
-          SHA=${{ steps.sha.outputs.sha }}
-          VERSION=${{ steps.parse.outputs.version }}
-
           TAGS="-t ${IMAGE}:${VERSION}"
-          if [[ "${{ steps.highest.outputs.is_highest }}" == "true" ]]; then
+          if [[ "${IS_HIGHEST}" == "true" ]]; then
             TAGS="${TAGS} -t ${IMAGE}:latest"
           fi
 
           docker buildx imagetools create \
             ${TAGS} \
-            ${IMAGE}:sha-${SHA}
+            "${IMAGE}:sha-${SHA}"
 
           # Capture digest for Cosign signing.
           DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')
@@ -137,6 +138,8 @@ jobs:
 
       - name: Sign release image
         if: steps.parse.outputs.match == 'true'
+        env:
+          IMAGE: ${{ steps.retag.outputs.image }}
+          DIGEST: ${{ steps.retag.outputs.digest }}
         run: |
-          cosign sign --yes \
-            ${{ steps.retag.outputs.image }}@${{ steps.retag.outputs.digest }}
+          cosign sign --yes "${IMAGE}@${DIGEST}"
