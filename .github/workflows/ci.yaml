@@ -1,0 +1,146 @@
+name: "[CI] Lint, build & publish"
+
+# Readable run titles in the Actions UI: PR runs show the PR number and
+# title; main pushes show the head commit subject.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
+      || format('Head build — {0}', github.event.head_commit.message) }}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# Least-privilege default: only read access at the workflow level.
+# Jobs that need more elevate locally.
+permissions:
+  contents: read
+
+jobs:
+  # ── Quality gates ─────────────────────────────────────────
+  #
+  # Helm lint runs on every push + PR as a parallel quality gate.
+  # Its failure breaks the workflow status but does not block the
+  # image build (surfaced via branch protection required check).
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v5
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin kubeconform
+
+      - name: Lint, template-render & validate chart
+        run: |
+          helm lint charts/
+          helm template test charts/ \
+            | kubeconform -strict -summary \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                -ignore-missing-schemas
+
+  # ── Container image ──────────────────────────────────────
+  #
+  # The shared reusable workflow handles checkout, change
+  # detection, Docker build/push, Cosign signing, and Trivy
+  # scanning.
+  #
+  # `helm-lint` is intentionally NOT in `needs` — it runs as an
+  # independent parallel job whose failure surfaces via branch
+  # protection (required status check) rather than delaying or
+  # blocking image builds.
+
+  build-qcon-api:
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+      actions: read            # Required by codeql-action/upload-sarif on private repos
+    with:
+      component: qcon-api
+      image_name: qcon-api
+      context: .
+      tag_prefix: "v"
+    secrets: inherit
+
+  # ── Helm chart → OCI registry (main push) ─────────────────
+  #
+  # Publishes the chart with the same RC version that the image
+  # received so the chart and app tags stay in lockstep.  Only
+  # runs on main pushes when the component actually changed.
+  # Release-time chart publishing is handled by helm-publish.yaml.
+
+  helm-publish:
+    needs: [helm-lint, build-qcon-api]
+    if: >-
+      github.event_name != 'pull_request'
+      && needs.build-qcon-api.outputs.rc_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write          # Cosign keyless (Sigstore OIDC)
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v5
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Cosign login (OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            cosign login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Helm login (OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Package, push & sign chart
+        shell: bash
+        env:
+          VERSION: ${{ needs.build-qcon-api.outputs.rc_version }}
+        run: |
+          set -euo pipefail
+
+          OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+          IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
+          CHART_DIR="charts"
+          CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
+          DEST_DIR="/tmp/charts"
+          mkdir -p "${DEST_DIR}"
+
+          helm package "${CHART_DIR}" \
+            --version "${VERSION}" \
+            --app-version "${VERSION}" \
+            -d "${DEST_DIR}"
+
+          PUSH_OUT=$(helm push \
+            "${DEST_DIR}/${CHART_NAME}-${VERSION}.tgz" \
+            "${OCI_BASE}" 2>&1) || true
+          echo "${PUSH_OUT}"
+          printf '%s\n' "${PUSH_OUT}" | grep -q '^Digest:' || { echo "::error::helm push failed for ${CHART_NAME}"; exit 1; }
+
+          DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
+          if [[ -n "${DIGEST}" ]]; then
+            cosign sign --yes "${IMAGE_BASE}/${CHART_NAME}@${DIGEST}"
+          fi

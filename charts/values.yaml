@@ -1,0 +1,54 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/bcit-tlu/qcon-api/qcon-api
+  pullPolicy: IfNotPresent
+  tag: "" # Defaults to .Chart.AppVersion
+
+service:
+  type: ClusterIP
+  port: 8000
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  readiness:
+    path: /healthz/ready
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# ── High-availability / topology spreading ────────────────────
+# When enabled, adds a required pod anti-affinity rule so that no two
+# replicas land in the same topology zone (e.g. datacenter).
+# Requires nodes to be labeled with the chosen topologyKey.
+# NOTE: replicaCount must not exceed the number of distinct zones,
+# otherwise excess pods will remain Pending (hard scheduling constraint).
+zoneAntiAffinity:
+  enabled: false
+  topologyKey: topology.kubernetes.io/zone
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qcon-api.fullname" . }}
+  labels:
+    {{- include "qcon-api.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "qcon-api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "qcon-api.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "qcon-api.serviceAccountName" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- $aff := deepCopy (.Values.affinity | default dict) }}
+      {{- if .Values.zoneAntiAffinity.enabled }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "qcon-api.selectorLabels" . | fromYaml)) "topologyKey" .Values.zoneAntiAffinity.topologyKey }}
+        {{- $existing := list }}
+        {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
+          {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}
+        {{- end }}
+        {{- $merged := dict "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (append $existing $zoneRule)) }}
+        {{- $aff = mustMergeOverwrite $aff $merged }}
+      {{- end }}
+      {{- if $aff }}
+      affinity:
+        {{- toYaml $aff | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: qcon-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
