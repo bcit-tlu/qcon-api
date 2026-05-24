@@ -48,7 +48,7 @@
 - CI uses shared `bcit-tlu/.github` OCI build reusable workflow
 - `helm-lint` validates Helm charts on every push and PR
 - `release-please` manages versioning via conventional commits (`release-type: "simple"`)
-- `VERSION` file is the primary version source (configured via `version-file` in release-please config)
+- Version is tracked in `.release-please-manifest.json` and `Chart.yaml` (`# x-release-please-version` annotations)
 - Images are published to `ghcr.io/bcit-tlu/qcon-api/qcon-api`
 - Charts are published to `oci://ghcr.io/bcit-tlu/qcon-api/charts`
 - `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` is set in all workflows
