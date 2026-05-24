@@ -113,7 +113,7 @@ jobs:
           set -euo pipefail
 
           CHART_DIR="charts"
-          CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
+          CHART_NAME=$(yq '.name' "${CHART_DIR}/Chart.yaml")
           DEST_DIR="/tmp/charts"
           mkdir -p "${DEST_DIR}"
 

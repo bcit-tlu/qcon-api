@@ -82,7 +82,7 @@ jobs:
 
           CHART_DIR="charts"
           DEST_DIR="/tmp/charts"
-          CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
+          CHART_NAME=$(yq '.name' "${CHART_DIR}/Chart.yaml")
 
           mkdir -p "${DEST_DIR}"
 
