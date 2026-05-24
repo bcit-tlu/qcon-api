@@ -39,12 +39,21 @@ resources:
     cpu: 250m
     memory: 512Mi
 
-# Optional hard anti-affinity across topology zones.
-# Ensure enough distinct zones exist for replicaCount.
-zoneAntiAffinity:
-  enabled: false
-  topologyKey: topology.kubernetes.io/zone
-
 nodeSelector: {}
 tolerations: []
+
+# Pod (anti-)affinity rules. Set raw Kubernetes affinity here.
+#
+# Example: hard anti-affinity to spread replicas across zones.
+# Ensure enough distinct zones exist for replicaCount, otherwise
+# pods will remain Pending.
+#
+# affinity:
+#   podAntiAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       - labelSelector:
+#           matchLabels:
+#             app.kubernetes.io/name: qcon-api
+#             app.kubernetes.io/instance: <release-name>
+#         topologyKey: topology.kubernetes.io/zone
 affinity: {}
