@@ -6,6 +6,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "version-file": "VERSION",
       "extra-files": [
         {
           "type": "generic",
