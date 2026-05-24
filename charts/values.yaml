@@ -1,0 +1,59 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/bcit-tlu/qcon-api/qcon-api
+  pullPolicy: IfNotPresent
+  tag: "" # Defaults to .Chart.AppVersion
+
+service:
+  type: ClusterIP
+  port: 8000
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+probes:
+  liveness:
+    path: /
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  readiness:
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+
+# Pod (anti-)affinity rules. Set raw Kubernetes affinity here.
+#
+# Example: hard anti-affinity to spread replicas across zones.
+# Ensure enough distinct zones exist for replicaCount, otherwise
+# pods will remain Pending.
+#
+# affinity:
+#   podAntiAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       - labelSelector:
+#           matchLabels:
+#             app.kubernetes.io/name: qcon-api
+#             app.kubernetes.io/instance: <release-name>
+#         topologyKey: topology.kubernetes.io/zone
+affinity: {}

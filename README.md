@@ -5,7 +5,7 @@
 
 ## Quick Start
 
-    docker run -p 8000:8000 ghcr.io/bcit-ltc/qcon-api
+    docker run -p 8000:8000 ghcr.io/bcit-tlu/qcon-api/qcon-api
 
 Open your browser to [http://localhost:8000](http://localhost:8000).
 
@@ -23,7 +23,7 @@ Additional info in the CONTRIBUTING.md file.
 
 If you need any help with `qcon`, please see the [Qcon Guide](https://qcon-guide.ltc.bcit.ca) or [contact us](mailto:ltc_techops@bcit.ca).
 
-Please submit any `qcon-api` bugs, issues, and feature requests to the [bcit-ltc/qcon-api](https://github.com/bcit-ltc/qcon-api) source code repo.
+Please submit any `qcon-api` bugs, issues, and feature requests to the [bcit-tlu/qcon-api](https://github.com/bcit-tlu/qcon-api) source code repo.
 
 ## License
 
