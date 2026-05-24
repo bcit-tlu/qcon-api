@@ -1,5 +1,5 @@
 # Dockerfile
-## Base
+# Build stage
 FROM python:3.11-slim AS builder
 
 ENV ARCH=amd64
@@ -32,7 +32,7 @@ RUN set -ex \
         && pip install -r requirements.txt \
         && antlr4 -v $ANTLR_VERSION
 
-## Build Formatter
+# Build Formatter
 WORKDIR /usr/src/formatter
 
 COPY antlr/formatter/formatter.g4 antlr/formatter/formatter.java ./
@@ -44,7 +44,7 @@ RUN set -ex \
     && jar cvfe formatter.jar formatter  *.class ./antlr.jar \
     ;
 
-## Build Sectioner
+# Build Sectioner
 WORKDIR /usr/src/sectioner
 
 COPY antlr/sectioner/sectioner.g4 antlr/sectioner/sectioner.java ./
@@ -56,7 +56,7 @@ RUN set -ex \
     && jar cvfe sectioner.jar sectioner  *.class ./antlr.jar \
     ;
 
-## Build Splitter
+# Build Splitter
 WORKDIR /usr/src/splitter
 
 COPY antlr/splitter/splitter.g4 antlr/splitter/splitter.java ./
@@ -68,7 +68,7 @@ RUN set -ex \
     && jar cvfe splitter.jar splitter  *.class ./antlr.jar \
     ;
 
-## Build Questionparser
+# Build Questionparser
 WORKDIR /usr/src/questionparser
 
 COPY antlr/questionparser/questionparser.g4 antlr/questionparser/questionparser.java ./
@@ -80,7 +80,7 @@ RUN set -ex \
     && jar cvfe questionparser.jar questionparser  *.class ./antlr.jar \
     ;
 
-## Build Endanswers
+# Build Endanswers
 WORKDIR /usr/src/endanswers
 
 COPY antlr/endanswers/endanswers.g4 antlr/endanswers/endanswers.java ./
@@ -93,7 +93,7 @@ RUN set -ex \
     ;
 
 
-# Release
+# Runtime stage
 FROM python:3.11-slim AS release
 
 LABEL maintainer=courseproduction@bcit.ca

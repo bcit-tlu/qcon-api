@@ -13,10 +13,11 @@ on:
 permissions:
   contents: read
   packages: write
-  id-token: write          # Cosign keyless (Sigstore OIDC)
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   publish:
