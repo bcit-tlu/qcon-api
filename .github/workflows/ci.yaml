@@ -102,28 +102,36 @@ jobs:
       - uses: sigstore/cosign-installer@v3
 
       - name: Cosign login (OCI)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          ACTOR: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            cosign login "${{ env.REGISTRY }}" \
-            -u "${{ github.actor }}" \
+          echo "${GITHUB_TOKEN}" | \
+            cosign login "${REGISTRY}" \
+            -u "${ACTOR}" \
             --password-stdin
 
       - name: Helm login (OCI)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          ACTOR: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            helm registry login "${{ env.REGISTRY }}" \
-            -u "${{ github.actor }}" \
+          echo "${GITHUB_TOKEN}" | \
+            helm registry login "${REGISTRY}" \
+            -u "${ACTOR}" \
             --password-stdin
 
       - name: Package, push & sign chart
         shell: bash
         env:
           VERSION: ${{ needs.build-qcon-api.outputs.rc_version }}
+          OCI_BASE: oci://${{ env.REGISTRY }}/${{ github.repository }}/charts
+          IMAGE_BASE: ${{ env.REGISTRY }}/${{ github.repository }}/charts
         run: |
           set -euo pipefail
 
-          OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
           CHART_DIR="charts"
           CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
           DEST_DIR="/tmp/charts"
