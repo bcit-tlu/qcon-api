@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/bcit-tlu/qcon-api/compare/v0.2.0...v0.3.0) (2026-05-25)
+
+
+### Features
+
+* **charts:** add generic secret management and volume mounts ([b6213e7](https://github.com/bcit-tlu/qcon-api/commit/b6213e734a42a7d86334c230fe271c1f51c95faf))
+* **charts:** conditional secret mounts and clean YAML separators ([bee52b9](https://github.com/bcit-tlu/qcon-api/commit/bee52b9d3f61d9ddbca56c3957d7a7cb2db17162))
+* read POSTGRES_PORT from mounted secret instead of hardcoding ([0499080](https://github.com/bcit-tlu/qcon-api/commit/04990800de02606ebcfa7b22b4289ca1ad64d8ca))
+
+
+### Bug Fixes
+
+* **charts:** combine with + toJson guard for nil-safe affinity conditional ([f83c1a7](https://github.com/bcit-tlu/qcon-api/commit/f83c1a74cc5f3ca03dc79e1e0c9ccee752093cae))
+
 ## [0.2.0](https://github.com/bcit-tlu/qcon-api/compare/v0.1.0...v0.2.0) (2026-05-24)
 
 
