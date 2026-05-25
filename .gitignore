@@ -50,6 +50,7 @@ app-chart/**
 
 # Secrets
 **/secrets*
+!charts/templates/secrets.yaml
 
 # Logs
 *.log
