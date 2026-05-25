@@ -9,7 +9,7 @@ ENV PATH="/opt/venv/bin:/base:$PATH"
 
 ENV ANTLR_VERSION=4.12.0
 ENV ANTLR_HOME=/root/.m2/repository/org/antlr/antlr4/
-ENV CLASSPATH=$CLASSPATH:$ANTLR_HOME/$ANTLR_VERSION/antlr4-$ANTLR_VERSION-complete.jar
+ENV CLASSPATH=$ANTLR_HOME/$ANTLR_VERSION/antlr4-$ANTLR_VERSION-complete.jar
 
 COPY requirements.txt ./
 
