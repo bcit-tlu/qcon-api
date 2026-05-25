@@ -19,9 +19,9 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- if ne (toJson .Values.affinity) "{}" }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml .Values.affinity | nindent 8 }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
@@ -35,6 +35,9 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+          env:
+            - name: APP_VERSION
+              value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
@@ -51,3 +54,23 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          volumeMounts:
+            - name: db-credentials
+              mountPath: /etc/secrets/db-credentials
+              readOnly: true
+            - name: app-internal-credentials
+              mountPath: /etc/secrets/app-internal-credentials
+              readOnly: true
+            - name: api-key
+              mountPath: /etc/secrets/api-key
+              readOnly: true
+      volumes:
+        - name: db-credentials
+          secret:
+            secretName: {{ .Values.postgres.existingSecret | default "db-credentials" }}
+        - name: app-internal-credentials
+          secret:
+            secretName: {{ .Values.appCredentials.existingSecret | default "app-internal-credentials" }}
+        - name: api-key
+          secret:
+            secretName: {{ .Values.apiKey.existingSecret | default "api-key" }}

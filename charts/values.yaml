@@ -57,3 +57,50 @@ tolerations: []
 #             app.kubernetes.io/instance: <release-name>
 #         topologyKey: topology.kubernetes.io/zone
 affinity: {}
+
+# ── PostgreSQL database credentials ──────────────────────────
+# The app reads credentials from files in /etc/secrets/db-credentials/.
+# When vault.enabled=false, the chart creates a K8s Secret from these
+# values and mounts it at the expected path.  When vault.enabled=true,
+# the secret is expected to be provisioned externally (e.g. by the
+# Vault Secrets Operator via a VaultDynamicSecret).
+#
+# Pre-existing secret: set existingSecret to the name of a Secret
+# that already contains keys POSTGRES_DB, POSTGRES_USER,
+# POSTGRES_PASSWORD, POSTGRES_HOST.  The chart will mount it without
+# creating its own.
+postgres:
+  host: "postgres"
+  database: "qcon-api"
+  username: "postgres"
+  password: "postgres"
+  existingSecret: ""
+
+# ── App internal credentials ─────────────────────────────────
+# Django admin account and secret key, read from
+# /etc/secrets/app-internal-credentials/.
+appCredentials:
+  adminUsername: "admin"
+  adminPassword: "admin"
+  djangoSecretKey: "change-me-in-production"
+  existingSecret: ""
+
+# ── API key ──────────────────────────────────────────────────
+# Shared API key for authenticated endpoints, read from
+# /etc/secrets/api-key/.
+apiKey:
+  key: "change-me-in-production"
+  existingSecret: ""
+
+# Vault / external secret-management toggle.
+# When true the chart does NOT create any Secret resources and expects
+# them to be provisioned externally (e.g. VaultDynamicSecret /
+# VaultStaticSecret managed by the Vault Secrets Operator).
+# Secret names expected by the deployment:
+#   db-credentials            — keys: POSTGRES_DB, POSTGRES_USER,
+#                                      POSTGRES_PASSWORD, POSTGRES_HOST
+#   app-internal-credentials  — keys: ADMIN_USERNAME, ADMIN_PASSWORD,
+#                                      DJANGO_SECRET_KEY
+#   api-key                   — keys: API_KEY
+vault:
+  enabled: false
