@@ -20,6 +20,29 @@ permissions:
   contents: read
 
 jobs:
+  # Python quality gate
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      # Advisory until pre-existing lint errors are resolved.
+      - name: Lint (ruff check)
+        continue-on-error: true
+        run: ruff check .
+
+      - name: Format check (ruff format)
+        continue-on-error: true
+        run: ruff format --check .
+
   # Chart quality gate
 
   helm-lint:
@@ -46,6 +69,7 @@ jobs:
   # Container image build/publish (reusable workflow)
 
   build-qcon-api:
+    needs: [lint]
     uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
     permissions:
       contents: read
