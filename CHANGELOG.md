@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/bcit-tlu/qcon-api/compare/v1.6.0...v1.6.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* remove stale release-as and fix CLASSPATH undefined var warning ([dec0ea3](https://github.com/bcit-tlu/qcon-api/commit/dec0ea3c8a57a32b259ef7cce76ea60d4bd63548))
+
 ## [1.6.0](https://github.com/bcit-tlu/qcon-api/compare/v0.3.0...v1.6.0) (2026-05-25)
 
 
