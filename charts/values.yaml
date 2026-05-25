@@ -59,17 +59,20 @@ tolerations: []
 affinity: {}
 
 # ── PostgreSQL database credentials ──────────────────────────
-# The app reads credentials from files in /etc/secrets/db-credentials/.
-# When vault.enabled=false, the chart creates a K8s Secret from these
-# values and mounts it at the expected path.  When vault.enabled=true,
-# the secret is expected to be provisioned externally (e.g. by the
-# Vault Secrets Operator via a VaultDynamicSecret).
+# Controls the db-credentials secret mount at /etc/secrets/db-credentials/.
 #
-# Pre-existing secret: set existingSecret to the name of a Secret
-# that already contains keys POSTGRES_DB, POSTGRES_USER,
-# POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT.  The chart will
-# mount it without creating its own.
+# enabled: true  (default) — mount the secret into the pod.
+#           false — skip the mount entirely; provide values via env vars.
+#
+# When vault.enabled=false AND enabled=true, the chart creates a K8s
+# Secret from these values.  When vault.enabled=true, the secret is
+# expected to be provisioned externally (e.g. VaultDynamicSecret).
+#
+# existingSecret: name of a pre-existing Secret containing keys
+#   POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST,
+#   POSTGRES_PORT.  The chart mounts it without creating its own.
 postgres:
+  enabled: true
   host: "postgres"
   port: "5432"
   database: "qcon-api"
@@ -78,18 +81,20 @@ postgres:
   existingSecret: ""
 
 # ── App internal credentials ─────────────────────────────────
-# Django admin account and secret key, read from
-# /etc/secrets/app-internal-credentials/.
+# Controls the app-internal-credentials secret mount.
+# Same enabled / existingSecret semantics as postgres above.
 appCredentials:
+  enabled: true
   adminUsername: "admin"
   adminPassword: "admin"
   djangoSecretKey: "change-me-in-production"
   existingSecret: ""
 
 # ── API key ──────────────────────────────────────────────────
-# Shared API key for authenticated endpoints, read from
-# /etc/secrets/api-key/.
+# Controls the api-key secret mount.
+# Same enabled / existingSecret semantics as postgres above.
 apiKey:
+  enabled: true
   key: "change-me-in-production"
   existingSecret: ""
 
