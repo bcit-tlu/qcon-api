@@ -67,10 +67,11 @@ affinity: {}
 #
 # Pre-existing secret: set existingSecret to the name of a Secret
 # that already contains keys POSTGRES_DB, POSTGRES_USER,
-# POSTGRES_PASSWORD, POSTGRES_HOST.  The chart will mount it without
-# creating its own.
+# POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT.  The chart will
+# mount it without creating its own.
 postgres:
   host: "postgres"
+  port: "5432"
   database: "qcon-api"
   username: "postgres"
   password: "postgres"
@@ -98,7 +99,8 @@ apiKey:
 # VaultStaticSecret managed by the Vault Secrets Operator).
 # Secret names expected by the deployment:
 #   db-credentials            — keys: POSTGRES_DB, POSTGRES_USER,
-#                                      POSTGRES_PASSWORD, POSTGRES_HOST
+#                                      POSTGRES_PASSWORD, POSTGRES_HOST,
+#                                      POSTGRES_PORT
 #   app-internal-credentials  — keys: ADMIN_USERNAME, ADMIN_PASSWORD,
 #                                      DJANGO_SECRET_KEY
 #   api-key                   — keys: API_KEY

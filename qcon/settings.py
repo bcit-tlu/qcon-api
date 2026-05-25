@@ -147,7 +147,7 @@ DATABASES = {
         'USER': get_secret("POSTGRES_USER", subdirectory='db-credentials', required=True),
         'PASSWORD': get_secret("POSTGRES_PASSWORD", subdirectory='db-credentials', required=True),
         'HOST': POSTGRES_HOST,
-        'PORT': 5432,
+        'PORT': get_secret("POSTGRES_PORT", subdirectory='db-credentials', default='5432'),
     }
 }
 
