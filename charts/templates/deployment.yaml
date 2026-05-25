@@ -19,9 +19,11 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if ne (toJson .Values.affinity) "{}" }}
+      {{- with .Values.affinity }}
+      {{- if ne (toJson .) "{}" }}
       affinity:
-        {{- toYaml .Values.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
