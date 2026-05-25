@@ -57,3 +57,57 @@ tolerations: []
 #             app.kubernetes.io/instance: <release-name>
 #         topologyKey: topology.kubernetes.io/zone
 affinity: {}
+
+# ── PostgreSQL database credentials ──────────────────────────
+# Controls the db-credentials secret mount at /etc/secrets/db-credentials/.
+#
+# enabled: true  (default) — mount the secret into the pod.
+#           false — skip the mount entirely; provide values via env vars.
+#
+# When vault.enabled=false AND enabled=true, the chart creates a K8s
+# Secret from these values.  When vault.enabled=true, the secret is
+# expected to be provisioned externally (e.g. VaultDynamicSecret).
+#
+# existingSecret: name of a pre-existing Secret containing keys
+#   POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST,
+#   POSTGRES_PORT.  The chart mounts it without creating its own.
+postgres:
+  enabled: true
+  host: "postgres"
+  port: "5432"
+  database: "qcon-api"
+  username: "postgres"
+  password: "postgres"
+  existingSecret: ""
+
+# ── App internal credentials ─────────────────────────────────
+# Controls the app-internal-credentials secret mount.
+# Same enabled / existingSecret semantics as postgres above.
+appCredentials:
+  enabled: true
+  adminUsername: "admin"
+  adminPassword: "admin"
+  djangoSecretKey: "change-me-in-production"
+  existingSecret: ""
+
+# ── API key ──────────────────────────────────────────────────
+# Controls the api-key secret mount.
+# Same enabled / existingSecret semantics as postgres above.
+apiKey:
+  enabled: true
+  key: "change-me-in-production"
+  existingSecret: ""
+
+# Vault / external secret-management toggle.
+# When true the chart does NOT create any Secret resources and expects
+# them to be provisioned externally (e.g. VaultDynamicSecret /
+# VaultStaticSecret managed by the Vault Secrets Operator).
+# Secret names expected by the deployment:
+#   db-credentials            — keys: POSTGRES_DB, POSTGRES_USER,
+#                                      POSTGRES_PASSWORD, POSTGRES_HOST,
+#                                      POSTGRES_PORT
+#   app-internal-credentials  — keys: ADMIN_USERNAME, ADMIN_PASSWORD,
+#                                      DJANGO_SECRET_KEY
+#   api-key                   — keys: API_KEY
+vault:
+  enabled: false

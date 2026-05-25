@@ -46,6 +46,7 @@ def get_secret(name: str, default: str = None, required: bool = False, subdirect
 ADMIN_USERNAME = get_secret('ADMIN_USERNAME', subdirectory='app-internal-credentials', required=True)
 ADMIN_PASSWORD = get_secret('ADMIN_PASSWORD', subdirectory='app-internal-credentials', required=True)
 POSTGRES_HOST = get_secret('POSTGRES_HOST', subdirectory='db-credentials', required=True)
+POSTGRES_PORT = get_secret('POSTGRES_PORT', subdirectory='db-credentials', default='5432')
 API_KEY = get_secret('API_KEY', subdirectory='api-key', required=True)
 
 DYNAMIC_DB_CREDENTIAL_DIR = os.getenv('DYNAMIC_DB_CREDENTIAL_DIR', '/etc/secrets/db-credentials')
@@ -147,7 +148,7 @@ DATABASES = {
         'USER': get_secret("POSTGRES_USER", subdirectory='db-credentials', required=True),
         'PASSWORD': get_secret("POSTGRES_PASSWORD", subdirectory='db-credentials', required=True),
         'HOST': POSTGRES_HOST,
-        'PORT': 5432,
+        'PORT': POSTGRES_PORT,
     }
 }
 

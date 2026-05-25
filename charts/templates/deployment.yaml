@@ -20,8 +20,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.affinity }}
+      {{- if ne (toJson .) "{}" }}
       affinity:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
@@ -35,6 +37,9 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+          env:
+            - name: APP_VERSION
+              value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
@@ -51,3 +56,42 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if or .Values.postgres.enabled .Values.appCredentials.enabled .Values.apiKey.enabled }}
+          volumeMounts:
+            {{- if .Values.postgres.enabled }}
+            - name: db-credentials
+              mountPath: /etc/secrets/db-credentials
+              readOnly: true
+            {{- end }}
+            {{- if .Values.appCredentials.enabled }}
+            - name: app-internal-credentials
+              mountPath: /etc/secrets/app-internal-credentials
+              readOnly: true
+            {{- end }}
+            {{- if .Values.apiKey.enabled }}
+            - name: api-key
+              mountPath: /etc/secrets/api-key
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.postgres.enabled .Values.appCredentials.enabled .Values.apiKey.enabled }}
+      volumes:
+        {{- if .Values.postgres.enabled }}
+        - name: db-credentials
+          secret:
+            secretName: {{ .Values.postgres.existingSecret | default "db-credentials" }}
+            optional: true
+        {{- end }}
+        {{- if .Values.appCredentials.enabled }}
+        - name: app-internal-credentials
+          secret:
+            secretName: {{ .Values.appCredentials.existingSecret | default "app-internal-credentials" }}
+            optional: true
+        {{- end }}
+        {{- if .Values.apiKey.enabled }}
+        - name: api-key
+          secret:
+            secretName: {{ .Values.apiKey.existingSecret | default "api-key" }}
+            optional: true
+        {{- end }}
+      {{- end }}
