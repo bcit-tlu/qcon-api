@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/bcit-tlu/qcon-api/compare/v1.6.1...v1.7.0) (2026-05-25)
+
+
+### Features
+
+* **ci:** add Python lint job with ruff ([0a86497](https://github.com/bcit-tlu/qcon-api/commit/0a864976c44143ba6087324dd5f9d1349e52a5b2))
+
 ## [1.6.1](https://github.com/bcit-tlu/qcon-api/compare/v1.6.0...v1.6.1) (2026-05-25)
 
 
