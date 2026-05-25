@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/bcit-tlu/qcon-api/compare/v0.3.0...v1.6.0) (2026-05-25)
+
+
+### Bug Fixes
+
+* exclude charts/templates/secrets.yaml from secrets gitignore ([55e77d6](https://github.com/bcit-tlu/qcon-api/commit/55e77d679a94601007e8069ced8c58124154bf56))
+
 ## [0.3.0](https://github.com/bcit-tlu/qcon-api/compare/v0.2.0...v0.3.0) (2026-05-25)
 
 
